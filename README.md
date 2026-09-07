@@ -90,6 +90,7 @@ Without Stripe / Dropbox Sign / Resend / S3 keys, adapters run in **stub mode**.
 
 ```bash
 npm run test
+npm run smoke   # mutates the seeded client through the funnel; re-run db:seed after
 ```
 
 Covers the pipeline state machine and the complete rule (signed ≠ complete; no signed-before-fit).
