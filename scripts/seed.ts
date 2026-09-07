@@ -1,0 +1,323 @@
+import { hash } from "bcryptjs";
+import { sql } from "drizzle-orm";
+import { closeDb, getDb } from "../src/db";
+import {
+  assignments,
+  availability,
+  clientPortalAccess,
+  clients,
+  emailTemplates,
+  emailTemplateVersions,
+  formAssignments,
+  formTemplates,
+  memberships,
+  organizations,
+  pipelineEvents,
+  pipelineStages,
+  portalMessages,
+  providerProfiles,
+  resourceShares,
+  resources,
+  users,
+} from "../src/db/schema";
+
+const ORG_ID = "11111111-1111-4111-8111-111111111111";
+const DOULA_ID = "22222222-2222-4222-8222-222222222222";
+const CLIENT_USER_ID = "33333333-3333-4333-8333-333333333333";
+const CLIENT_ID = "44444444-4444-4444-8444-444444444444";
+const DEMO_PASSWORD = "tokos-demo";
+
+async function main() {
+  const db = getDb();
+  const passwordHash = await hash(DEMO_PASSWORD, 10);
+
+  await db.execute(sql`TRUNCATE TABLE
+    invoice_lines, invoices, audit_logs, file_objects, outbox_messages,
+    email_template_versions, email_templates, portal_messages, resource_shares,
+    resources, form_submissions, form_assignments, form_templates,
+    client_portal_access, availability, calendar_events, payment_statuses,
+    esign_artifacts, contract_events, contracts, engagements, assignments,
+    pipeline_events, pipeline_stages, invites, memberships, provider_profiles,
+    clients, users, organizations
+    RESTART IDENTITY CASCADE`);
+
+  await db.insert(organizations).values({
+    id: ORG_ID,
+    name: "NOVA Birth Partners",
+    slug: "nova-birth-partners",
+    timezone: "America/New_York",
+    portalName: "NOVA Birth Partners",
+    primaryColor: "#2A7A78",
+    websiteUrl: "https://novabirthpartners.com",
+    onCallPhone: "(703) 555-0148",
+    confidentialityBlurb:
+      "What you share in this portal stays between you and your NOVA team. Sensitive notes never go out in email.",
+    footerHtml: "NOVA Birth Partners · Northern Virginia",
+  });
+
+  await db.insert(users).values([
+    {
+      id: DOULA_ID,
+      email: "maya@novabirthpartners.com",
+      name: "Maya Chen",
+      passwordHash,
+      credentialsLabel: "CD(DONA)",
+    },
+    {
+      id: CLIENT_USER_ID,
+      email: "jordan.rivera@example.com",
+      name: "Jordan Rivera",
+      passwordHash,
+    },
+  ]);
+
+  await db.insert(memberships).values({
+    id: "55555555-5555-4555-8555-555555555555",
+    organizationId: ORG_ID,
+    userId: DOULA_ID,
+    role: "owner",
+  });
+
+  await db.insert(providerProfiles).values({
+    id: "66666666-6666-4666-8666-666666666666",
+    organizationId: ORG_ID,
+    userId: DOULA_ID,
+    slug: "maya-chen",
+    headline: "Steady company for your labor and the days after",
+    bio: "I support families across Northern Virginia through pregnancy, labor, and the first weeks home. My work is practical: a calm person in the room, a plan you can actually use, and clear next steps. I am not a clinician — I am the person who stays.",
+    serviceArea: "Arlington, Alexandria, Fairfax, and DC",
+    ratesLabel: "Birth package from $2,800",
+    published: true,
+  });
+
+  const edd = new Date();
+  edd.setDate(edd.getDate() + 21);
+
+  await db.insert(clients).values({
+    id: CLIENT_ID,
+    organizationId: ORG_ID,
+    displayName: "Jordan Rivera",
+    preferredName: "Jordan",
+    email: "jordan.rivera@example.com",
+    phone: "(571) 555-0199",
+    source: "web",
+    edd: edd.toISOString().slice(0, 10),
+    city: "Arlington",
+    region: "VA",
+    alternateContactName: "Sam Rivera",
+    alternateContactPhone: "(571) 555-0110",
+  });
+
+  await db.insert(pipelineStages).values({
+    id: "77777777-7777-4777-8777-777777777777",
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    stage: "new_lead",
+  });
+  await db.insert(pipelineEvents).values({
+    id: "88888888-8888-4888-8888-888888888888",
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    fromStage: null,
+    toStage: "new_lead",
+    reason: "seed",
+  });
+  await db.insert(assignments).values({
+    id: "99999999-9999-4999-8999-999999999999",
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    userId: DOULA_ID,
+    role: "primary",
+    status: "active",
+  });
+
+  await db.insert(clientPortalAccess).values({
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    userId: CLIENT_USER_ID,
+    email: "jordan.rivera@example.com",
+    status: "active",
+    inviteSentAt: new Date(),
+  });
+
+  const weekdays = [1, 2, 3, 4, 5];
+  await db.insert(availability).values(
+    weekdays.map((weekday, index) => ({
+      id: `bbbbbbb${index}-bbbb-4bbb-8bbb-bbbbbbbbbbb${index}`,
+      organizationId: ORG_ID,
+      userId: DOULA_ID,
+      weekday,
+      startMinutes: 10 * 60,
+      endMinutes: 16 * 60,
+      timezone: "America/New_York",
+    })),
+  );
+
+  const intakeId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const preferencesId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  await db.insert(formTemplates).values([
+    {
+      id: intakeId,
+      organizationId: ORG_ID,
+      title: "Getting-to-know-you",
+      kind: "intake",
+      schemaJson: {
+        fields: [
+          { id: "preferred_name", label: "What should we call you?", type: "text" },
+          {
+            id: "support_style",
+            label: "How do you want company during labor?",
+            type: "textarea",
+          },
+          {
+            id: "household_notes",
+            label: "Anyone else we should know about on the team at home?",
+            type: "textarea",
+          },
+        ],
+      },
+    },
+    {
+      id: preferencesId,
+      organizationId: ORG_ID,
+      title: "Birth preferences (non-clinical)",
+      kind: "expectations",
+      schemaJson: {
+        fields: [
+          {
+            id: "atmosphere",
+            label: "What would help the room feel like yours?",
+            type: "textarea",
+          },
+          {
+            id: "after_birth",
+            label: "First hours after birth — what matters most?",
+            type: "textarea",
+          },
+        ],
+      },
+    },
+  ]);
+
+  await db.insert(formAssignments).values([
+    {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      organizationId: ORG_ID,
+      templateId: intakeId,
+      clientId: CLIENT_ID,
+      status: "incomplete",
+      assigneeRole: "either",
+    },
+    {
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      organizationId: ORG_ID,
+      templateId: preferencesId,
+      clientId: CLIENT_ID,
+      status: "incomplete",
+      assigneeRole: "either",
+    },
+  ]);
+
+  const resourceId = "12121212-1212-4121-8121-121212121212";
+  await db.insert(resources).values({
+    id: resourceId,
+    organizationId: ORG_ID,
+    title: "What a NOVA doula does (and does not do)",
+    kind: "handout",
+    body: "Your doula stays with you, helps you change positions, talks with your partner, and keeps the plan visible. Your doula does not perform clinical exams or speak for your medical team.",
+    tags: ["welcome", "expectations"],
+  });
+  await db.insert(resourceShares).values({
+    id: "13131313-1313-4131-8131-131313131313",
+    organizationId: ORG_ID,
+    resourceId,
+    clientId: CLIENT_ID,
+  });
+
+  await db.insert(portalMessages).values({
+    id: "14141414-1414-4141-8141-141414141414",
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    fromUserId: DOULA_ID,
+    direction: "outbound",
+    body: "Jordan — welcome. When you are ready, pick a fit consult on my calendar and we will see if we are the right match. No pressure.",
+  });
+
+  const templates = [
+    {
+      triggerKey: "client_welcome",
+      name: "Client welcome",
+      subject: "Welcome to {{org_name}}",
+      text: "Hi {{client_name}}, your doula shared an introduction. Open your portal: {{portal_url}}",
+    },
+    {
+      triggerKey: "client_portal_invite",
+      name: "Client portal invite",
+      subject: "Your NOVA client portal is ready",
+      text: "Hi {{client_name}}, sign in at {{portal_url}} to see your checklist.",
+    },
+    {
+      triggerKey: "agreement_sent",
+      name: "Agreement sent",
+      subject: "Your care agreement is ready to sign",
+      text: "Hi {{client_name}}, review and sign in Tokos: {{sign_url}}",
+    },
+    {
+      triggerKey: "invoice_due",
+      name: "Invoice due",
+      subject: "Invoice {{invoice_number}} is ready",
+      text: "Hi {{client_name}}, pay invoice {{invoice_number}} in your portal: {{portal_url}}",
+    },
+    {
+      triggerKey: "doula_invited",
+      name: "Doula invited",
+      subject: "You are invited to Tokos",
+      text: "You have been invited to the NOVA workspace. Sign in at {{portal_url}}",
+    },
+    {
+      triggerKey: "form_reminder",
+      name: "Form reminder",
+      subject: "A form is waiting in your portal",
+      text: "Hi {{client_name}}, finish your forms here: {{portal_url}}",
+    },
+  ];
+
+  for (const template of templates) {
+    const id = crypto.randomUUID();
+    const html = `<p>${template.text.replaceAll("\n", "</p><p>")}</p><p>NOVA Birth Partners</p>`;
+    await db.insert(emailTemplates).values({
+      id,
+      organizationId: ORG_ID,
+      triggerKey: template.triggerKey,
+      name: template.name,
+      enabled: true,
+      fromName: "NOVA Birth Partners",
+      replyTo: "hello@novabirthpartners.com",
+      subjectTpl: template.subject,
+      bodyTextTpl: template.text,
+      bodyHtmlTpl: html,
+    });
+    await db.insert(emailTemplateVersions).values({
+      id: crypto.randomUUID(),
+      templateId: id,
+      version: 1,
+      subjectTpl: template.subject,
+      bodyTextTpl: template.text,
+      bodyHtmlTpl: html,
+      authoredByUserId: DOULA_ID,
+    });
+  }
+
+  console.log(`Seeded NOVA Birth Partners.
+  Doula:  maya@novabirthpartners.com / ${DEMO_PASSWORD}
+  Client: jordan.rivera@example.com / ${DEMO_PASSWORD}
+  Profile: /p/maya-chen`);
+  await closeDb();
+}
+
+main().catch(async (error) => {
+  console.error(error);
+  await closeDb();
+  process.exit(1);
+});
