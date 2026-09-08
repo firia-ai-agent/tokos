@@ -83,6 +83,23 @@ the past, outside a window, or already taken is rejected server-side and the pag
 Clients see their future consults on `/portal/calendar` under **Upcoming consults**. Slots expand
 in `America/New_York` wall clock, so a 10:00 window stays 10:00 across DST. No Acuity.
 
+**Forms, resources, and co-complete (TOK-27):** as Maya, `/doula/forms` is the hub —
+**New template** builds one from a plain list (`Label | type | sensitive`, one per line),
+and each template card assigns to a family with who fills it in, an optional due date, and
+an optional email nudge. `/doula/resources` is the same shape for handouts: write or link
+one, share it to a family's portal, and watch the read counter. **In flight** shows every
+assignment, and a complete one prints its answers inline. Families do their side at
+`/portal/forms` — the card shows what is waiting, saves answers, and then shows them back.
+A doula finishes a form *with* a family from **Forms (co-complete)** on the client record,
+prefilled from whatever the family already typed; **Reopen** hands it back for edits.
+
+**PHI firewall (TOK-27):** a question marked `| sensitive` — or worded as health, notes,
+history, or medication — gets a coral **Sensitive** badge everywhere it appears and never
+leaves the portal. Form emails carry three vars only: `client_name`, `portal_url`,
+`open_forms`. `assertAnswersNotInEmail` re-checks the outgoing vars against the latest
+submission before any enqueue, so a var that repeats something the family typed throws
+instead of sending. Covered in `src/lib/forms.test.ts`.
+
 Reseed (wipes local/demo data, then recreates the tenants above):
 
 ```bash
@@ -102,7 +119,17 @@ npm run db:seed
 
 **Pay-fail (Veri):** while signed in as Jordan, open `/stub/pay?invoiceId=<id>&result=fail` and click **Simulate failed payment** (or `result=canceled`). Invoice stays due / not paid, `payment_statuses` is `failed` or `canceled` (not cleared), and the stage does not become `contract_complete`.
 
-**Tenancy probe:** as Maya, `/doula/clients/44444444-4444-4444-8444-444444444446` (Riley / Cedar) must 404. As Jordan, Avery's contract/invoice/stub URLs must not complete or leak.
+**Forms + resources (Veri):** as Maya, `/doula/forms` shows 3 templates and 6 open
+assignments (3 each for Jordan and Avery); **First two weeks at home** carries two
+**Sensitive** questions. Assign one, then open Jordan's record → **Forms (co-complete)** →
+fill the postpartum form → **Save with client**: the card flips to **Complete** and prints
+the answers, and Jordan sees the same answers at `/portal/forms`. **Reopen** puts it back.
+On `/doula/resources`, share **Comfort measures you can practice this week** with a family
+and it lands in their portal; **Mark read** flips the counter to read. Every reminder email
+in `outbox_messages` carries only a name, a portal link, and a count — no answers, and no
+question wording.
+
+**Tenancy probe:** as Maya, `/doula/clients/44444444-4444-4444-8444-444444444446` (Riley / Cedar) must 404. As Jordan, Avery's contract/invoice/stub URLs must not complete or leak. Form and resource writes are org-scoped the same way: a template, assignment, resource, or share id posted from another tenant reads back as nothing.
 
 Without Stripe / Dropbox Sign / Resend / S3 keys, adapters run in **stub mode**. PHI (visit notes, health detail) is never written to email bodies, Stripe metadata, or e-sign custom fields.
 
@@ -124,7 +151,7 @@ npm run test
 npm run smoke   # mutates the seeded client through the funnel; re-run db:seed after
 ```
 
-Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, and tenant ownership guards.
+Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, tenant ownership guards, and the form PHI firewall (sensitive-field detection, template parsing, and the guard that refuses to let an answer into an email).
 
 ## Built vs deferred
 
@@ -135,6 +162,9 @@ Covers the pipeline state machine, the complete rule (signed ≠ complete; no si
 - Auth.js credentials: Membership for staff, ClientPortalAccess for families
 - Revenue-first doula Home, enforced funnel, send contract, invoices
 - Client portal checklist, sign, pay, two-way PortalMessage, forms, resources, profile
+- Doula form hub: template builder → assignment → submission, with co-complete (TOK-27)
+- Doula resource library + share to portal, with a real read counter (TOK-27)
+- PHI firewall on form email: sensitive badges, answers never enqueued (TOK-27)
 - Tokos calendar availability + Book Consult
 - Public provider profile + QR + provider photo / credentials (TOK-25)
 - Outbox drain (Resend or stub) + Vercel Cron

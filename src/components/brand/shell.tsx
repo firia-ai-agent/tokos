@@ -60,6 +60,8 @@ export function AppShell({
           { label: "Home", href: "/doula", keywords: "home review revenue" },
           { label: "Clients / pipeline", href: "/doula/clients", keywords: "clients pipeline intake lead family" },
           { label: "Calendar", href: "/doula/calendar", keywords: "calendar availability schedule consult" },
+          { label: "Forms", href: "/doula/forms", keywords: "forms templates assign intake co-complete questions" },
+          { label: "Resources", href: "/doula/resources", keywords: "resources handouts library share education" },
           { label: "Invoices", href: "/doula/invoices", keywords: "invoices money pay billing" },
           { label: "Messages", href: "/doula/messages", keywords: "messages inbox" },
           { label: "Profile", href: "/doula/profile", keywords: "profile book consult public" },

@@ -264,6 +264,7 @@ async function main() {
 
   const intakeId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
   const preferencesId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const postpartumId = "cccccccc-cccc-4ccc-8ccc-ccccccccccce";
   await db.insert(formTemplates).values([
     {
       id: intakeId,
@@ -306,6 +307,35 @@ async function main() {
         ],
       },
     },
+    {
+      id: postpartumId,
+      organizationId: ORG_ID,
+      title: "First two weeks at home",
+      kind: "postpartum",
+      schemaJson: {
+        // The last two are marked sensitive so the seeded demo shows the badge and the
+        // "answers never leave the portal" rule against real content, not a placeholder.
+        fields: [
+          {
+            id: "help_window",
+            label: "Which days do you most want someone in the house?",
+            type: "text",
+          },
+          {
+            id: "household_notes",
+            label: "Who is bringing food, and who should we not let in?",
+            type: "textarea",
+            sensitive: true,
+          },
+          {
+            id: "quiet_context",
+            label: "Anything you want held quietly between us?",
+            type: "textarea",
+            sensitive: true,
+          },
+        ],
+      },
+    },
   ]);
 
   await db.insert(formAssignments).values([
@@ -341,17 +371,46 @@ async function main() {
       status: "incomplete",
       assigneeRole: "either",
     },
+    // Third open form each, so the co-complete path (TOK-27) has something to demo
+    // without first emptying the family's own queue.
+    {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee0",
+      organizationId: ORG_ID,
+      templateId: postpartumId,
+      clientId: CLIENT_ID,
+      status: "incomplete",
+      assigneeRole: "doula",
+    },
+    {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+      organizationId: ORG_ID,
+      templateId: postpartumId,
+      clientId: AVERY_CLIENT_ID,
+      status: "incomplete",
+      assigneeRole: "doula",
+    },
   ]);
 
   const resourceId = "12121212-1212-4121-8121-121212121212";
-  await db.insert(resources).values({
-    id: resourceId,
-    organizationId: ORG_ID,
-    title: "What a NOVA doula does (and does not do)",
-    kind: "handout",
-    body: "Your doula stays with you, helps you change positions, talks with your partner, and keeps the plan visible. Your doula does not perform clinical exams or speak for your medical team.",
-    tags: ["welcome", "expectations"],
-  });
+  const comfortResourceId = "12121212-1212-4121-8121-121212121213";
+  await db.insert(resources).values([
+    {
+      id: resourceId,
+      organizationId: ORG_ID,
+      title: "What a NOVA doula does (and does not do)",
+      kind: "handout",
+      body: "Your doula stays with you, helps you change positions, talks with your partner, and keeps the plan visible. Your doula does not perform clinical exams or speak for your medical team.",
+      tags: ["welcome", "expectations"],
+    },
+    {
+      id: comfortResourceId,
+      organizationId: ORG_ID,
+      title: "Comfort measures you can practice this week",
+      kind: "checklist",
+      body: "Ten minutes a day is enough: slow breathing with a long exhale, hip squeezes with your partner, leaning forward over the counter, warm compress on the low back, and a playlist you actually like. Practice while nothing hurts so your body knows the moves later.",
+      tags: ["comfort", "labor", "partner"],
+    },
+  ]);
   await db.insert(resourceShares).values([
     {
       id: "13131313-1313-4131-8131-131313131313",
@@ -363,6 +422,21 @@ async function main() {
       id: "13131313-1313-4131-8131-131313131314",
       organizationId: ORG_ID,
       resourceId,
+      clientId: AVERY_CLIENT_ID,
+    },
+    // Jordan gets the second resource read, Avery's stays unread, so the doula library
+    // shows both sides of the read counter out of the box.
+    {
+      id: "13131313-1313-4131-8131-131313131315",
+      organizationId: ORG_ID,
+      resourceId: comfortResourceId,
+      clientId: CLIENT_ID,
+      completedAt: new Date(),
+    },
+    {
+      id: "13131313-1313-4131-8131-131313131316",
+      organizationId: ORG_ID,
+      resourceId: comfortResourceId,
       clientId: AVERY_CLIENT_ID,
     },
   ]);
@@ -526,7 +600,10 @@ async function main() {
   Cedar staff: sam@cedarbirth.co / ${DEMO_PASSWORD} (owner of Cedar — must not reach NOVA clients)
   Cedar:   riley.voss@example.com / ${DEMO_PASSWORD} (other org — Maya must not see)
   Cedar client id: ${CEDAR_CLIENT_ID}
-  Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25)`);
+  Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25)
+  Forms:   3 templates, 3 incomplete each for Jordan and Avery (TOK-27) — the postpartum one
+           carries sensitive questions and is marked "For a visit" for co-complete
+  Library: 2 resources; the comfort checklist is read by Jordan and unread by Avery`);
   await closeDb();
 }
 

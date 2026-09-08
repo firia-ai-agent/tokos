@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { formAssignments, formSubmissions, portalMessages, providerProfiles } from "@/db/schema";
+import { portalMessages, providerProfiles } from "@/db/schema";
 import {
   confirmFit,
   sendContract,
@@ -165,43 +165,6 @@ export async function removeProfilePhotoAction() {
   await clearProviderPhoto({ organizationId: staff.organizationId, userId: staff.userId });
   // The public profile pages are force-dynamic, so they pick the photo up on next request.
   revalidatePath("/doula/profile");
-}
-
-export async function coCompleteFormAction(formData: FormData) {
-  const staff = await requireStaff();
-  const assignmentId = String(formData.get("assignmentId") ?? "");
-  if (!assignmentId) return;
-  const db = getDb();
-  const [assignment] = await db
-    .select()
-    .from(formAssignments)
-    .where(
-      and(
-        eq(formAssignments.id, assignmentId),
-        eq(formAssignments.organizationId, staff.organizationId),
-      ),
-    )
-    .limit(1);
-  if (!assignment) return;
-
-  const answers: Record<string, string> = {};
-  for (const [key, value] of formData.entries()) {
-    if (key.startsWith("field-")) {
-      answers[key.replace("field-", "")] = String(value);
-    }
-  }
-  await db.insert(formSubmissions).values({
-    id: newId(),
-    organizationId: staff.organizationId,
-    assignmentId,
-    submittedByUserId: staff.userId,
-    answersJson: answers,
-  });
-  await db
-    .update(formAssignments)
-    .set({ status: "complete", updatedAt: new Date() })
-    .where(eq(formAssignments.id, assignmentId));
-  revalidatePath("/doula");
 }
 
 /**

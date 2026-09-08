@@ -31,6 +31,8 @@ const ICONS: Record<string, LucideIcon> = {
   "/doula": House,
   "/doula/clients": Users,
   "/doula/calendar": CalendarDays,
+  "/doula/forms": ClipboardList,
+  "/doula/resources": Library,
   "/doula/invoices": Receipt,
   "/doula/messages": MessageSquare,
   "/doula/profile": UserRound,

@@ -141,6 +141,12 @@ export function ShellTopBar({
               <Link href={newHref}>Open pipeline</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
+              <Link href="/doula/forms">Form · template or assign</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/doula/resources">Resource · write or share</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
               <Link href="/doula/profile">Public profile · Book Consult</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>

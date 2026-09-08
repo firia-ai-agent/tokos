@@ -15,6 +15,7 @@ import {
   resourceShares,
 } from "@/db/schema";
 import { SlotUnavailableError, type SlotRejection } from "@/lib/calendar";
+import { readAnswers } from "@/lib/forms";
 import { beginCheckout, bookConsult, markAgreementSigned } from "@/lib/funnel";
 import { newId } from "@/lib/ids";
 import { requireClient } from "@/lib/tenancy";
@@ -78,6 +79,7 @@ export async function sendPortalMessageAction(formData: FormData) {
 export async function completeFormAction(formData: FormData) {
   const session = await requireClient();
   const assignmentId = String(formData.get("assignmentId") ?? "");
+  if (!assignmentId) return;
   const db = getDb();
   const [assignment] = await db
     .select()
@@ -85,27 +87,28 @@ export async function completeFormAction(formData: FormData) {
     .where(
       and(
         eq(formAssignments.id, assignmentId),
+        eq(formAssignments.organizationId, session.organizationId),
         eq(formAssignments.clientId, session.clientId),
       ),
     )
     .limit(1);
   if (!assignment) return;
-  const answers: Record<string, string> = {};
-  for (const [key, value] of formData.entries()) {
-    if (key.startsWith("field-")) answers[key.replace("field-", "")] = String(value);
-  }
+  const answers = readAnswers(formData.entries());
   await db.insert(formSubmissions).values({
     id: newId(),
     organizationId: session.organizationId,
-    assignmentId,
+    assignmentId: assignment.id,
     submittedByUserId: session.userId,
     answersJson: answers,
   });
   await db
     .update(formAssignments)
     .set({ status: "complete", updatedAt: new Date() })
-    .where(eq(formAssignments.id, assignmentId));
+    .where(eq(formAssignments.id, assignment.id));
   revalidatePath("/portal");
+  revalidatePath("/portal/forms");
+  revalidatePath("/doula/forms");
+  revalidatePath(`/doula/clients/${assignment.clientId}`);
 }
 
 export async function markResourceDoneAction(shareId: string) {
@@ -115,9 +118,15 @@ export async function markResourceDoneAction(shareId: string) {
     .update(resourceShares)
     .set({ completedAt: new Date() })
     .where(
-      and(eq(resourceShares.id, shareId), eq(resourceShares.clientId, session.clientId)),
+      and(
+        eq(resourceShares.id, shareId),
+        eq(resourceShares.organizationId, session.organizationId),
+        eq(resourceShares.clientId, session.clientId),
+      ),
     );
   revalidatePath("/portal");
+  revalidatePath("/portal/resources");
+  revalidatePath("/doula/resources");
 }
 
 export async function bookClientConsultAction(formData: FormData) {

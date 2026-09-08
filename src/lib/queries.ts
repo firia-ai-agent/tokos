@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { addDays, differenceInCalendarWeeks, format, startOfMonth, subMonths } from "date-fns";
 import { getDb } from "@/db";
 import {
@@ -7,10 +7,13 @@ import {
   clients,
   contracts,
   formAssignments,
+  formSubmissions,
+  formTemplates,
   invoices,
   pipelineStages,
   portalMessages,
   resourceShares,
+  resources,
 } from "@/db/schema";
 import { formatCents } from "@/lib/money";
 import { STAGE_LABELS, type PipelineStageName } from "@/lib/pipeline";
@@ -380,6 +383,77 @@ export async function listOrgClients(organizationId: string, doulaUserId: string
         eq(assignments.status, "active"),
       ),
     );
+}
+
+/**
+ * Everything `/doula/forms` renders: the org's templates, every assignment with its
+ * template and family, and the latest submission per assignment so a complete form can
+ * show what was answered. Reads are org-scoped; the answers never leave this process
+ * except into the portal-authenticated page.
+ */
+export async function formsHub(organizationId: string) {
+  const db = getDb();
+  const templates = await db
+    .select()
+    .from(formTemplates)
+    .where(eq(formTemplates.organizationId, organizationId))
+    .orderBy(asc(formTemplates.title));
+
+  const rows = await db
+    .select({ assignment: formAssignments, template: formTemplates, client: clients })
+    .from(formAssignments)
+    .innerJoin(formTemplates, eq(formTemplates.id, formAssignments.templateId))
+    .innerJoin(clients, eq(clients.id, formAssignments.clientId))
+    .where(eq(formAssignments.organizationId, organizationId))
+    .orderBy(desc(formAssignments.updatedAt));
+
+  const submissions = await db
+    .select()
+    .from(formSubmissions)
+    .where(eq(formSubmissions.organizationId, organizationId))
+    .orderBy(desc(formSubmissions.submittedAt));
+
+  // Ordered newest-first above, so the first hit per assignment is the latest one.
+  const latest = new Map<string, (typeof submissions)[number]>();
+  for (const submission of submissions) {
+    if (!latest.has(submission.assignmentId)) latest.set(submission.assignmentId, submission);
+  }
+
+  const assignmentsWithAnswers = rows.map((row) => ({
+    ...row,
+    submission: latest.get(row.assignment.id) ?? null,
+  }));
+
+  return {
+    templates,
+    assignments: assignmentsWithAnswers,
+    openCount: rows.filter((row) => row.assignment.status === "incomplete").length,
+    completeCount: rows.filter((row) => row.assignment.status === "complete").length,
+  };
+}
+
+/** Everything `/doula/resources` renders: the org library plus who has each item. */
+export async function resourcesHub(organizationId: string) {
+  const db = getDb();
+  const library = await db
+    .select()
+    .from(resources)
+    .where(eq(resources.organizationId, organizationId))
+    .orderBy(asc(resources.title));
+
+  const shares = await db
+    .select({ share: resourceShares, resource: resources, client: clients })
+    .from(resourceShares)
+    .innerJoin(resources, eq(resources.id, resourceShares.resourceId))
+    .innerJoin(clients, eq(clients.id, resourceShares.clientId))
+    .where(eq(resourceShares.organizationId, organizationId))
+    .orderBy(desc(resourceShares.sharedAt));
+
+  return {
+    library,
+    shares,
+    readCount: shares.filter((row) => row.share.completedAt).length,
+  };
 }
 
 /** Lightweight attention list for shell notifications — real ledger/pipeline only. */

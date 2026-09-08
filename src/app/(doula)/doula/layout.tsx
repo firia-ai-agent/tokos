@@ -13,6 +13,8 @@ const nav = [
   { href: "/doula", label: "Home" },
   { href: "/doula/clients", label: "Clients" },
   { href: "/doula/calendar", label: "Calendar" },
+  { href: "/doula/forms", label: "Forms" },
+  { href: "/doula/resources", label: "Resources" },
   { href: "/doula/invoices", label: "Invoices" },
   { href: "/doula/messages", label: "Messages" },
   { href: "/doula/profile", label: "Profile" },
@@ -25,6 +27,13 @@ const navGroups: ShellNavGroup[] = [
       { href: "/doula", label: "Home" },
       { href: "/doula/clients", label: "Clients" },
       { href: "/doula/calendar", label: "Calendar" },
+    ],
+  },
+  {
+    label: "Care library",
+    items: [
+      { href: "/doula/forms", label: "Forms" },
+      { href: "/doula/resources", label: "Resources" },
     ],
   },
   {

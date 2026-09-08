@@ -1,13 +1,14 @@
-import { and, eq } from "drizzle-orm";
+import { format } from "date-fns";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { formAssignments, formTemplates } from "@/db/schema";
+import { formAssignments, formSubmissions, formTemplates } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { completeFormAction } from "@/app/actions/client";
+import { FormAnswers, FormFieldInputs, PhiNote } from "@/components/brand/forms";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/brand/states";
+import { cn } from "@/lib/utils";
 
 export default async function PortalFormsPage() {
   const session = await requireClient();
@@ -21,39 +22,103 @@ export default async function PortalFormsPage() {
         eq(formAssignments.organizationId, session.organizationId),
         eq(formAssignments.clientId, session.clientId),
       ),
-    );
+    )
+    .orderBy(desc(formAssignments.updatedAt));
 
   if (rows.length === 0) {
-    return <EmptyState title="No forms yet" body="Your doula will assign these when you are ready." />;
+    return (
+      <EmptyState title="No forms yet" body="Your doula will assign these when you are ready." />
+    );
   }
+
+  // Answers are read back so a family can see what they sent and pick up a form the
+  // doula started with them on a visit.
+  const submissions = await db
+    .select()
+    .from(formSubmissions)
+    .where(
+      and(
+        eq(formSubmissions.organizationId, session.organizationId),
+        inArray(
+          formSubmissions.assignmentId,
+          rows.map((row) => row.assignment.id),
+        ),
+      ),
+    )
+    .orderBy(desc(formSubmissions.submittedAt));
+
+  const latest = new Map<string, (typeof submissions)[number]>();
+  for (const submission of submissions) {
+    if (!latest.has(submission.assignmentId)) latest.set(submission.assignmentId, submission);
+  }
+
+  const open = rows.filter((row) => row.assignment.status === "incomplete").length;
 
   return (
     <div className="space-y-6">
-      <h2 className="font-heading text-2xl text-teal-ink">Forms</h2>
-      {rows.map(({ assignment, template }) => (
-        <form key={assignment.id} action={completeFormAction} className="space-y-3 rounded-xl border bg-card p-4">
-          <input type="hidden" name="assignmentId" value={assignment.id} />
-          <div className="flex items-center justify-between">
-            <h3 className="font-medium">{template.title}</h3>
-            <Badge variant="outline">{assignment.status}</Badge>
-          </div>
-          {template.schemaJson.fields.map((field) => (
-            <div key={field.id} className="space-y-1">
-              <label className="text-sm" htmlFor={field.id}>
-                {field.label}
-              </label>
-              {field.type === "textarea" ? (
-                <Textarea id={field.id} name={`field-${field.id}`} />
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-[28px] font-semibold tracking-[-0.02em] text-teal-ink">
+            Forms
+          </h1>
+          <p className="mt-1.5 text-[14.5px] text-muted-foreground">
+            {open === 0
+              ? "All caught up — nothing waiting on you."
+              : `${open} form${open === 1 ? "" : "s"} waiting on you.`}
+          </p>
+        </div>
+        <PhiNote className="max-w-xs sm:text-right" />
+      </header>
+
+      <div className="space-y-4">
+        {rows.map(({ assignment, template }) => {
+          const submission = latest.get(assignment.id) ?? null;
+          const isComplete = assignment.status === "complete";
+
+          return (
+            <article key={assignment.id} className="rounded-xl bg-card ring-1 ring-teal/15">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-teal/10 px-5 py-3.5">
+                <div className="min-w-0">
+                  <h2 className="font-heading text-lg text-teal-ink">{template.title}</h2>
+                  <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                    {template.schemaJson.fields.length} question
+                    {template.schemaJson.fields.length === 1 ? "" : "s"}
+                    {assignment.dueAt ? ` · due ${format(assignment.dueAt, "MMM d")}` : ""}
+                    {submission ? ` · saved ${format(submission.submittedAt, "MMM d")}` : ""}
+                  </p>
+                </div>
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    isComplete ? "bg-teal/12 text-teal-ink" : "bg-coral/12 text-coral",
+                  )}
+                >
+                  {isComplete ? "Complete" : "Waiting on you"}
+                </Badge>
+              </div>
+
+              {isComplete ? (
+                <div className="space-y-3 px-5 py-4">
+                  <FormAnswers schema={template.schemaJson} answers={submission?.answersJson} />
+                  <p className="text-[12.5px] text-muted-foreground">
+                    Want to change something? Message your doula and she can reopen it.
+                  </p>
+                </div>
               ) : (
-                <Input id={field.id} name={`field-${field.id}`} />
+                <form action={completeFormAction} className="space-y-4 px-5 py-4">
+                  <input type="hidden" name="assignmentId" value={assignment.id} />
+                  <FormFieldInputs
+                    schema={template.schemaJson}
+                    idPrefix={assignment.id}
+                    defaults={submission?.answersJson}
+                  />
+                  <Button type="submit">Save answers</Button>
+                </form>
               )}
-            </div>
-          ))}
-          <Button type="submit" disabled={assignment.status === "complete"}>
-            {assignment.status === "complete" ? "Completed" : "Save"}
-          </Button>
-        </form>
-      ))}
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }
