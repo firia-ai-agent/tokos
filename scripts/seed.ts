@@ -28,6 +28,7 @@ const CLIENT_ID = "44444444-4444-4444-8444-444444444444";
 const AVERY_USER_ID = "33333333-3333-4333-8333-333333333334";
 const AVERY_CLIENT_ID = "44444444-4444-4444-8444-444444444445";
 const CEDAR_ORG_ID = "11111111-1111-4111-8111-111111111112";
+const CEDAR_STAFF_ID = "22222222-2222-4222-8222-222222222223";
 const CEDAR_CLIENT_USER_ID = "33333333-3333-4333-8333-333333333336";
 const CEDAR_CLIENT_ID = "44444444-4444-4444-8444-444444444446";
 const DEMO_PASSWORD = "tokos-demo";
@@ -79,6 +80,13 @@ async function main() {
       email: "avery.kim@example.com",
       name: "Avery Kim",
       passwordHash,
+    },
+    {
+      id: CEDAR_STAFF_ID,
+      email: "sam@cedarbirth.co",
+      name: "Sam Ortega",
+      passwordHash,
+      credentialsLabel: "CD(DONA)",
     },
     {
       id: CEDAR_CLIENT_USER_ID,
@@ -417,6 +425,23 @@ async function main() {
       "What you share in this portal stays between you and your Cedar team. Sensitive notes never go out in email.",
     footerHtml: "Cedar Birth Collective · IDOR probe tenant",
   });
+  await db.insert(memberships).values({
+    id: "55555555-5555-4555-8555-555555555556",
+    organizationId: CEDAR_ORG_ID,
+    userId: CEDAR_STAFF_ID,
+    role: "owner",
+  });
+  await db.insert(providerProfiles).values({
+    id: "66666666-6666-4666-8666-666666666667",
+    organizationId: CEDAR_ORG_ID,
+    userId: CEDAR_STAFF_ID,
+    slug: "sam-ortega",
+    headline: "Birth and postpartum support across Richmond",
+    bio: "I walk with families through late pregnancy, labor, and the first weeks home. Practical, unhurried, and clear about what is mine to do and what belongs to your medical team.",
+    serviceArea: "Richmond and Petersburg",
+    ratesLabel: "Birth package from $2,400",
+    published: true,
+  });
   await db.insert(clients).values({
     id: CEDAR_CLIENT_ID,
     organizationId: CEDAR_ORG_ID,
@@ -455,9 +480,10 @@ async function main() {
   Doula:   maya@novabirthpartners.com / ${DEMO_PASSWORD}
   Client:  jordan.rivera@example.com / ${DEMO_PASSWORD}
   Client:  avery.kim@example.com / ${DEMO_PASSWORD}
+  Cedar staff: sam@cedarbirth.co / ${DEMO_PASSWORD} (owner of Cedar — must not reach NOVA clients)
   Cedar:   riley.voss@example.com / ${DEMO_PASSWORD} (other org — Maya must not see)
   Cedar client id: ${CEDAR_CLIENT_ID}
-  Profile: /p/maya-chen`);
+  Profile: /p/maya-chen, /p/sam-ortega`);
   await closeDb();
 }
 

@@ -61,6 +61,7 @@ Demo logins after seed (password `tokos-demo`):
 | Client | `jordan.rivera@example.com` | Primary happy-path client |
 | Client | `avery.kim@example.com` | Second NOVA client at `new_lead` |
 | Other-org client | `riley.voss@example.com` | Cedar Birth Collective — Maya must not see |
+| Other-org doula / owner | `sam@cedarbirth.co` | Owns Cedar Birth Collective — must not see or write to NOVA clients (IDOR / TOK-20 probe) |
 
 Public profile + Book Consult: `/p/maya-chen`
 
