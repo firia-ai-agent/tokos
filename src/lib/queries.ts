@@ -15,12 +15,14 @@ import {
   invites,
   invoices,
   memberships,
+  organizations,
   pipelineStages,
   portalMessages,
   resourceShares,
   resources,
   users,
 } from "@/db/schema";
+import { clientChrome } from "@/lib/client-brand";
 import { formatCents } from "@/lib/money";
 import { stageLabel } from "@/lib/pipeline";
 
@@ -683,4 +685,19 @@ export async function orgEmailTemplates(organizationId: string) {
     latest.set(row.templateId, Math.max(latest.get(row.templateId) ?? 0, Number(row.version ?? 0)));
   }
   return templates.map((template) => ({ ...template, version: latest.get(template.id) ?? 1 }));
+}
+
+/**
+ * The practice's word for its own portal, resolved for a client surface (TOK-39 E4).
+ * The layout and `generateMetadata` both need it and cannot share a render, so the read
+ * lives here once rather than as two hand-rolled selects that could drift.
+ */
+export async function clientPortalChrome(organizationId: string) {
+  const db = getDb();
+  const [org] = await db
+    .select({ portalName: organizations.portalName, name: organizations.name })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  return clientChrome(org?.portalName, org?.name);
 }

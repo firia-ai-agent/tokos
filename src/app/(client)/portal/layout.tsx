@@ -1,9 +1,7 @@
-import { eq } from "drizzle-orm";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { getDb } from "@/db";
-import { organizations } from "@/db/schema";
-import { clientChrome } from "@/lib/client-brand";
+import { clientPortalChrome } from "@/lib/queries";
 import { AppShell } from "@/components/brand/shell";
 import type { ShellNavGroup } from "@/components/brand/shell-nav";
 
@@ -44,20 +42,24 @@ const navGroups: ShellNavGroup[] = [
   },
 ];
 
+/**
+ * The browser tab is client chrome too. Left to the root layout it read "Tokos — OS for
+ * birth work" over a family's portal, which is the same leak as the rail (TOK-39 E4).
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const session = await auth();
+  if (!session?.user || session.user.actorType !== "client") return {};
+  const chrome = await clientPortalChrome(session.user.organizationId ?? "");
+  return { title: chrome.portalName };
+}
+
 export default async function ClientLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user || session.user.actorType !== "client") redirect("/login");
 
-  const db = getDb();
-  const [org] = await db
-    .select({ portalName: organizations.portalName, name: organizations.name })
-    .from(organizations)
-    .where(eq(organizations.id, session.user.organizationId ?? ""))
-    .limit(1);
-
   // The client rail leads with the practice, not the product (TOK-39 E4). "Tokos" is
   // the staff shells' word; a family bought NOVA.
-  const chrome = clientChrome(org?.portalName, org?.name);
+  const chrome = await clientPortalChrome(session.user.organizationId ?? "");
 
   return (
     <AppShell
