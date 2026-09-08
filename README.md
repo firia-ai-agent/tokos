@@ -75,6 +75,14 @@ evidence, which shares that table. The seed already attaches a generated placeho
 Maya and Sam through that same upload path, so both public profiles have a face out of the box —
 use **Remove photo** to see the initials fallback.
 
+**Tokos calendar (TOK-26):** as Maya, `/doula/calendar` sets the weekly availability windows
+(scoped to her org **and** her user) and **My schedule** lists the upcoming events on her Tokos
+calendar. Public `/p/<slug>/book` and the client portal's **Book consult** both create the
+lead/event straight on that calendar, behind the same `isSlotOpen` gate — a posted time that is in
+the past, outside a window, or already taken is rejected server-side and the page says which.
+Clients see their future consults on `/portal/calendar` under **Upcoming consults**. Slots expand
+in `America/New_York` wall clock, so a 10:00 window stays 10:00 across DST. No Acuity.
+
 Reseed (wipes local/demo data, then recreates the tenants above):
 
 ```bash

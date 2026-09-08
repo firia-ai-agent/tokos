@@ -14,6 +14,7 @@ import {
   portalMessages,
   resourceShares,
 } from "@/db/schema";
+import { SlotUnavailableError, type SlotRejection } from "@/lib/calendar";
 import { beginCheckout, bookConsult, markAgreementSigned } from "@/lib/funnel";
 import { newId } from "@/lib/ids";
 import { requireClient } from "@/lib/tenancy";
@@ -126,14 +127,24 @@ export async function bookClientConsultAction(formData: FormData) {
   const [startRaw, endRaw] = slot.split("|");
   const startsAt = new Date(startRaw ?? "");
   const endsAt = new Date(endRaw ?? "");
-  await bookConsult({
-    organizationId: session.organizationId,
-    assigneeUserId,
-    clientId: session.clientId,
-    startsAt,
-    endsAt,
-    actorUserId: session.userId,
-  });
+  // bookConsult re-checks the window against the Tokos calendar. A rejection is a
+  // race or a stale page, not a bug — send the client back with the reason.
+  let rejection: SlotRejection | null = null;
+  try {
+    await bookConsult({
+      organizationId: session.organizationId,
+      assigneeUserId,
+      clientId: session.clientId,
+      startsAt,
+      endsAt,
+      actorUserId: session.userId,
+    });
+  } catch (error) {
+    if (!(error instanceof SlotUnavailableError)) throw error;
+    rejection = error.reason;
+  }
+  // redirect() throws, so it has to run outside the try block above.
+  if (rejection) redirect(`/portal/calendar?error=${rejection}`);
   revalidatePath("/portal");
   revalidatePath("/doula");
 }

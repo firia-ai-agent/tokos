@@ -10,9 +10,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { formatSlot, listOpenSlots } from "@/lib/calendar";
+import {
+  SLOT_REJECTION_MESSAGES,
+  formatSlot,
+  listOpenSlots,
+  type SlotRejection,
+} from "@/lib/calendar";
 
 export const dynamic = "force-dynamic";
+
+const MISSING_MESSAGE = "Name, email, and a time are required.";
+
+/** A rejected booking says *why* — "already taken" and "missing email" are not the same fix. */
+function bookingError(error?: string) {
+  if (!error) return null;
+  if (error === "missing") return MISSING_MESSAGE;
+  return SLOT_REJECTION_MESSAGES[error as SlotRejection] ?? MISSING_MESSAGE;
+}
 
 export default async function BookConsultPage({
   params,
@@ -36,6 +50,7 @@ export default async function BookConsultPage({
     organizationId: row.profile.organizationId,
     userId: row.profile.userId,
   });
+  const error = bookingError(query.error);
 
   return (
     <div className="min-h-screen">
@@ -56,9 +71,9 @@ export default async function BookConsultPage({
         <p className="mb-6 mt-3 text-sm text-muted-foreground">
           This opens a lead on their Tokos calendar. A signature is never complete by itself.
         </p>
-        {query.error ? (
+        {error ? (
           <Alert variant="destructive" className="mb-4">
-            <AlertDescription>Name, email, and a time are required.</AlertDescription>
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
         <Card>

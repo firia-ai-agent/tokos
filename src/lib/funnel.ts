@@ -30,6 +30,7 @@ import {
   type PipelineStageName,
 } from "@/lib/pipeline";
 import { isPaymentCleared, paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
+import { assertSlotOpen } from "@/lib/calendar";
 import { appUrl } from "@/lib/env";
 
 export async function getFunnelFlags(
@@ -570,6 +571,15 @@ export async function bookConsult(input: {
   endsAt: Date;
   actorUserId?: string | null;
 }) {
+  // The Tokos calendar is the system of record, so the requested time is re-derived
+  // from availability + booked events here — never trusted from the posted form.
+  await assertSlotOpen({
+    organizationId: input.organizationId,
+    userId: input.assigneeUserId,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+  });
+
   const db = getDb();
   const eventId = newId();
   await db.insert(calendarEvents).values({
@@ -612,6 +622,15 @@ export async function createLeadFromBooking(input: {
   startsAt: Date;
   endsAt: Date;
 }) {
+  // Check the slot before any row is written, so a stale or forged time never
+  // leaves an orphan lead behind.
+  await assertSlotOpen({
+    organizationId: input.organizationId,
+    userId: input.assigneeUserId,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+  });
+
   const db = getDb();
   const clientId = newId();
   const email = input.email.trim().toLowerCase();
@@ -678,4 +697,38 @@ export async function createLeadFromBooking(input: {
   });
 
   return clientId;
+}
+
+/** Free a booked window back into availability (TOK-26). */
+export async function cancelCalendarEvent(input: {
+  organizationId: string;
+  eventId: string;
+  actorUserId: string;
+}) {
+  const db = getDb();
+  const [event] = await db
+    .select()
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.id, input.eventId),
+        eq(calendarEvents.organizationId, input.organizationId),
+        eq(calendarEvents.assigneeUserId, input.actorUserId),
+      ),
+    )
+    .limit(1);
+  if (!event) throw new Error("Forbidden");
+
+  await db
+    .update(calendarEvents)
+    .set({ status: "canceled", updatedAt: new Date() })
+    .where(eq(calendarEvents.id, event.id));
+
+  await writeAudit({
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    action: "consult.canceled",
+    entityType: "calendar_event",
+    entityId: event.id,
+  });
 }

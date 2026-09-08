@@ -100,7 +100,14 @@ export async function saveAvailabilityAction(formData: FormData) {
   const staff = await requireStaff();
   const { availability } = await import("@/db/schema");
   const db = getDb();
-  await db.delete(availability).where(eq(availability.userId, staff.userId));
+  await db
+    .delete(availability)
+    .where(
+      and(
+        eq(availability.userId, staff.userId),
+        eq(availability.organizationId, staff.organizationId),
+      ),
+    );
   const days = [1, 2, 3, 4, 5, 6, 0];
   for (const weekday of days) {
     if (formData.get(`day-${weekday}`) !== "on") continue;

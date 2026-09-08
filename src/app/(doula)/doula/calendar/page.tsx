@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import { format } from "date-fns";
 import { getDb } from "@/db";
-import { availability, calendarEvents } from "@/db/schema";
+import { availability } from "@/db/schema";
+import { formatSlot, listSchedule, organizationTimezone } from "@/lib/calendar";
 import { requireStaff } from "@/lib/tenancy";
 import { saveAvailabilityAction } from "@/app/actions/doula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,15 +31,13 @@ export default async function CalendarPage() {
         eq(availability.userId, staff.userId),
       ),
     );
-  const events = await db
-    .select()
-    .from(calendarEvents)
-    .where(
-      and(
-        eq(calendarEvents.organizationId, staff.organizationId),
-        eq(calendarEvents.assigneeUserId, staff.userId),
-      ),
-    );
+  // The Tokos calendar is the system of record, so "my schedule" reads through
+  // listSchedule rather than re-querying calendar_events here.
+  const { upcoming } = await listSchedule({
+    organizationId: staff.organizationId,
+    userId: staff.userId,
+  });
+  const timeZone = await organizationTimezone(staff.organizationId);
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -87,18 +85,19 @@ export default async function CalendarPage() {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Upcoming on Tokos calendar</CardTitle>
+          <CardTitle>My schedule (upcoming on Tokos calendar)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {events.length === 0 ? (
+          {upcoming.length === 0 ? (
             <EmptyState
               title="No visits yet"
               body="Fit consults from your public Book button land here."
             />
           ) : (
-            events.map((event) => (
-              <p key={event.id} className="text-sm">
-                {format(event.startsAt, "EEE MMM d, h:mm a")} · {event.title} · {event.status}
+            upcoming.map((entry) => (
+              <p key={entry.id} className="text-sm">
+                {formatSlot(entry.startsAt, timeZone)} · {entry.title}
+                {entry.clientName ? ` · ${entry.clientName}` : ""}
               </p>
             ))
           )}

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { providerProfiles } from "@/db/schema";
+import { checkSlot } from "@/lib/calendar";
 import { createLeadFromBooking } from "@/lib/funnel";
 
 export async function publicBookAction(formData: FormData) {
@@ -27,6 +28,17 @@ export async function publicBookAction(formData: FormData) {
     .where(eq(providerProfiles.slug, slug))
     .limit(1);
   if (!profile) redirect("/");
+
+  // Re-derive the window from the Tokos calendar; the posted radio value is only a hint.
+  const check = await checkSlot({
+    organizationId: profile.organizationId,
+    userId: profile.userId,
+    startsAt,
+    endsAt,
+  });
+  if (!check.ok) {
+    redirect(`/p/${slug}/book?error=${check.reason}`);
+  }
 
   await createLeadFromBooking({
     organizationId: profile.organizationId,
