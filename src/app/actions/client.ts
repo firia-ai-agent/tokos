@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   clients,
@@ -73,7 +73,37 @@ export async function sendPortalMessageAction(formData: FormData) {
     direction: "inbound",
     body,
   });
+  // The reply has to land on both sides of the thread: the family's own view, the Home
+  // checklist that counts it, and the doula inbox / client record that answers it.
   revalidatePath("/portal");
+  revalidatePath("/portal/messages");
+  revalidatePath("/doula/messages");
+  revalidatePath(`/doula/clients/${session.clientId}`);
+}
+
+/**
+ * Opening `/portal/messages` is what marks the doula's notes read. Scoped to the session's
+ * own org **and** client, and only touching rows that are still unread, so this can never
+ * clear another tenant's thread or rewrite a stamp that already exists.
+ */
+export async function markPortalMessagesReadAction() {
+  const session = await requireClient();
+  const db = getDb();
+  await db
+    .update(portalMessages)
+    .set({ readAt: new Date() })
+    .where(
+      and(
+        eq(portalMessages.organizationId, session.organizationId),
+        eq(portalMessages.clientId, session.clientId),
+        eq(portalMessages.direction, "outbound"),
+        isNull(portalMessages.readAt),
+      ),
+    );
+  // Home reads the same counter, so it has to drop with the thread.
+  revalidatePath("/portal");
+  revalidatePath("/portal/messages");
+  revalidatePath(`/doula/clients/${session.clientId}`);
 }
 
 export async function completeFormAction(formData: FormData) {
@@ -161,21 +191,32 @@ export async function bookClientConsultAction(formData: FormData) {
 export async function updateClientProfileAction(formData: FormData) {
   const session = await requireClient();
   const db = getDb();
+  // A cleared field should read back as empty, not as the string "null" — and `edd` is a
+  // date column, so an empty input has to become NULL rather than "".
+  const text = (name: string) => String(formData.get(name) ?? "").trim();
+  const edd = text("edd");
   await db
     .update(clients)
     .set({
-      preferredName: String(formData.get("preferredName") ?? ""),
-      phone: String(formData.get("phone") ?? ""),
-      addressLine1: String(formData.get("addressLine1") ?? ""),
-      city: String(formData.get("city") ?? ""),
-      region: String(formData.get("region") ?? ""),
-      postalCode: String(formData.get("postalCode") ?? ""),
-      alternateContactName: String(formData.get("alternateContactName") ?? ""),
-      alternateContactPhone: String(formData.get("alternateContactPhone") ?? ""),
+      preferredName: text("preferredName"),
+      phone: text("phone"),
+      edd: edd === "" ? null : edd,
+      addressLine1: text("addressLine1"),
+      addressLine2: text("addressLine2"),
+      city: text("city"),
+      region: text("region"),
+      postalCode: text("postalCode"),
+      alternateContactName: text("alternateContactName"),
+      alternateContactPhone: text("alternateContactPhone"),
       updatedAt: new Date(),
     })
-    .where(eq(clients.id, session.clientId));
+    .where(
+      and(eq(clients.id, session.clientId), eq(clients.organizationId, session.organizationId)),
+    );
   revalidatePath("/portal/profile");
+  // The doula record prints the same name/EDD.
+  revalidatePath(`/doula/clients/${session.clientId}`);
+  redirect("/portal/profile?saved=1");
 }
 
 export async function finalizeStubSign(contractId: string) {

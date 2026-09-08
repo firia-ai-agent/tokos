@@ -2,6 +2,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { requireClient } from "@/lib/tenancy";
 import { clientChecklist, stageLabel } from "@/lib/queries";
+import { checklistCards, checklistSummary, openTaskCount } from "@/lib/checklist";
 import { getFunnelFlags } from "@/lib/funnel";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -17,52 +18,8 @@ export default async function PortalHomePage({
   const funnel = await getFunnelFlags(session.organizationId, session.clientId);
   const firstName = (session.name ?? "there").split(/\s+/)[0];
 
-  const items = [
-    {
-      href: "/portal/forms",
-      label: "Forms",
-      detail: "Getting-to-know-you and preferences",
-      count: checklist.incompleteForms,
-      tone: "teal" as const,
-    },
-    {
-      href: "/portal/contract",
-      label: "Agreement",
-      detail: "Review and sign when ready",
-      count: checklist.unsignedContracts,
-      tone: "coral" as const,
-    },
-    {
-      href: "/portal/pay",
-      label: "Pay",
-      detail: "Open invoices in your portal",
-      count: checklist.openInvoices,
-      tone: "coral" as const,
-    },
-    {
-      href: "/portal/messages",
-      label: "Messages",
-      detail: "Notes from your doula",
-      count: checklist.unreadMessages,
-      tone: "teal" as const,
-    },
-    {
-      href: "/portal/resources",
-      label: "Resources",
-      detail: "Handouts shared for birth prep",
-      count: checklist.openResources,
-      tone: "teal" as const,
-    },
-    {
-      href: "/portal/calendar",
-      label: "Consults",
-      detail: "Upcoming fit visits",
-      count: checklist.upcomingConsults,
-      tone: "teal" as const,
-    },
-  ];
-
-  const due = items.reduce((sum, item) => sum + item.count, 0);
+  const cards = checklistCards(checklist);
+  const open = openTaskCount(checklist);
 
   return (
     <div className="space-y-6">
@@ -86,39 +43,73 @@ export default async function PortalHomePage({
             Welcome, {firstName}
           </h1>
           <p className="mt-1.5 text-[14.5px] text-muted-foreground">
-            {format(new Date(), "EEEE, MMMM d")}
-            {due > 0 ? ` · ${due} item${due === 1 ? "" : "s"} on your checklist` : " · you are caught up"}
+            {format(new Date(), "EEEE, MMMM d")} · {checklistSummary(checklist)}
           </p>
         </div>
-        <Badge className="bg-teal-ink text-cloud hover:bg-teal-ink">{stageLabel(funnel.stage)}</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {open > 0 ? (
+            <Badge variant="secondary" className="bg-coral/12 text-coral">
+              {open} to do
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="bg-teal/12 text-teal-ink">
+              Caught up
+            </Badge>
+          )}
+          <Badge className="bg-teal-ink text-cloud hover:bg-teal-ink">
+            {stageLabel(funnel.stage)}
+          </Badge>
+        </div>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {items.map((item) => (
+        {cards.map((card) => (
           <Link
-            key={item.href}
-            href={item.href}
-            className="group rounded-xl bg-card p-4 ring-1 ring-teal/15 transition hover:ring-teal/35"
+            key={card.href}
+            href={card.href}
+            className={cn(
+              "group rounded-xl bg-card p-4 ring-1 transition",
+              card.actionable
+                ? "ring-coral/30 hover:ring-coral/55"
+                : "ring-teal/15 hover:ring-teal/35",
+            )}
           >
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  {item.label}
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  {card.label}
+                  {card.key === "unreadMessages" && card.count > 0 ? (
+                    <span
+                      aria-hidden
+                      className="inline-flex min-w-4 items-center justify-center rounded-full bg-coral px-1.5 py-0.5 text-[10px] font-bold leading-none text-cloud tabular-nums"
+                    >
+                      {card.count}
+                    </span>
+                  ) : null}
                 </p>
-                <p className="mt-2 text-[13px] text-muted-foreground">{item.detail}</p>
+                <p className="mt-2 text-[13px] text-muted-foreground">{card.detail}</p>
               </div>
               <p
                 className={cn(
                   "font-heading text-[28px] font-semibold leading-none tabular-nums",
-                  item.count > 0 && item.tone === "coral" ? "text-coral" : "text-teal-ink",
+                  card.tone === "coral" ? "text-coral" : "text-teal-ink",
                 )}
               >
-                {item.count}
+                {card.count}
               </p>
             </div>
-            <p className="mt-4 text-[12px] font-semibold text-teal group-hover:underline">
-              Open →
-            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+              {/* The count is never a naked number — it always says what it counts. */}
+              <p
+                className={cn(
+                  "text-[12px] font-semibold",
+                  card.tone === "coral" ? "text-coral" : "text-teal-ink/70",
+                )}
+              >
+                {card.countLabel}
+              </p>
+              <p className="text-[12px] font-semibold text-teal group-hover:underline">Open →</p>
+            </div>
           </Link>
         ))}
       </section>

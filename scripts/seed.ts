@@ -441,6 +441,10 @@ async function main() {
     },
   ]);
 
+  // Stamped relative to now so the thread reads as a conversation with a shape — the
+  // welcome yesterday, the family's reply this morning — instead of three lines at once.
+  const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000);
+
   await db.insert(portalMessages).values([
     {
       id: "14141414-1414-4141-8141-141414141414",
@@ -449,6 +453,7 @@ async function main() {
       fromUserId: DOULA_ID,
       direction: "outbound",
       body: "Jordan — welcome. When you are ready, pick a fit consult on my calendar and we will see if we are the right match. No pressure.",
+      sentAt: hoursAgo(28),
     },
     {
       id: "14141414-1414-4141-8141-141414141415",
@@ -457,6 +462,18 @@ async function main() {
       fromUserId: DOULA_ID,
       direction: "outbound",
       body: "Avery — welcome. Your portal is ready when you want to book a fit consult. No pressure.",
+      sentAt: hoursAgo(28),
+    },
+    // Jordan writes back, so the thread is two-way out of the box: her line sits unread on
+    // the doula inbox, and Maya's welcome sits unread on Jordan's Home checklist (TOK-28).
+    {
+      id: "14141414-1414-4141-8141-141414141416",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      fromUserId: CLIENT_USER_ID,
+      direction: "inbound",
+      body: "Thank you! I looked at your calendar — is a weekday morning still open? I am also wondering what a fit consult usually covers.",
+      sentAt: hoursAgo(3),
     },
   ]);
 
@@ -603,7 +620,9 @@ async function main() {
   Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25)
   Forms:   3 templates, 3 incomplete each for Jordan and Avery (TOK-27) — the postpartum one
            carries sensitive questions and is marked "For a visit" for co-complete
-  Library: 2 resources; the comfort checklist is read by Jordan and unread by Avery`);
+  Library: 2 resources; the comfort checklist is read by Jordan and unread by Avery
+  Portal:  Jordan's message thread is two-way out of the box (TOK-28) — Maya's welcome
+           yesterday, Jordan's reply this morning, both still unread on their own side`);
   await closeDb();
 }
 

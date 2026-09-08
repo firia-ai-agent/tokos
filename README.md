@@ -93,6 +93,32 @@ assignment, and a complete one prints its answers inline. Families do their side
 A doula finishes a form *with* a family from **Forms (co-complete)** on the client record,
 prefilled from whatever the family already typed; **Reopen** hands it back for edits.
 
+**Client portal home, messaging, and profile (TOK-28):** `/portal` is the family's
+checklist. The four things they actually owe — **Forms**, **Agreement**, **Pay**, and
+unread **Messages** — are counted from real rows by `clientChecklist`, and every count is
+labelled ("2 open", "1 to sign", "1 unread") rather than left as a bare number. Anything
+still open is coral; once it is clear the card goes Teal Ink and says so ("Nothing due",
+"No new messages"). **Resources** and **Consults** stay on the grid as context and never go
+coral. Messages carries a small coral badge while something is unread.
+
+Messaging is one thread per family, rendered from the same `portal_messages` rows on both
+sides by `MessageThread` in `src/components/brand/messages.tsx`: chronological, bubbled,
+with the sender named, a relative stamp ("3 hrs ago", full date in the `title`), day
+dividers, and a composer that sticks to the bottom of the thread. The family reads and
+writes at `/portal/messages`; the doula answers from **Portal messages** on the client
+record. `/doula/messages` is now an inbox of conversations — one card per family, newest
+first, with the last line and an unread count, linking to that family's record. **Opening a
+thread is what marks it read**: `/portal/messages` stamps `read_at` on the doula's unread
+notes (org + client scoped) and revalidates `/portal`, so the Home unread count drops;
+opening the client record does the mirror for what the family wrote. Still no SMS — this
+stays in Tokos.
+
+`/portal/profile` is the family's own record: **Contact** (preferred name, read-only
+sign-in email, phone, estimated due date), **Address** (including line 2), and
+**Alternate**, in the same `rounded-xl bg-card ring-teal/15` chrome as the rest of the
+portal, with a saved banner after the redirect. An emptied EDD writes `NULL`, not `""`.
+Health detail belongs on forms, not here.
+
 **PHI firewall (TOK-27):** a question marked `| sensitive` — or worded as health, notes,
 history, or medication — gets a coral **Sensitive** badge everywhere it appears and never
 leaves the portal. Form emails carry three vars only: `client_name`, `portal_url`,
@@ -129,6 +155,18 @@ and it lands in their portal; **Mark read** flips the counter to read. Every rem
 in `outbox_messages` carries only a name, a portal link, and a count — no answers, and no
 question wording.
 
+**Portal home + messaging (Veri):** sign in as Jordan. `/portal` shows **Messages 1 ·
+"1 unread"** in coral with a badge, alongside the labelled Forms / Agreement / Pay counts,
+and the header says how many items are on the checklist. Open **Messages**: the thread
+reads oldest-first with Maya's welcome on the left and Jordan's seeded reply on the right,
+under **Yesterday** / **Today** dividers. Go back to `/portal` — Messages is now Teal Ink
+and reads **"No new messages"**, because opening the thread stamped `read_at`. Send a
+reply, then sign in as Maya: `/doula/messages` lists Jordan's thread first with a coral
+**unread** badge and the last line; open the record and the same thread is mirrored, with
+Maya's own notes on the right. `/portal/profile` → add an apartment line and an estimated
+due date → **Save profile** → the page comes back with **Profile saved**, and the values
+are still there on reload.
+
 **Tenancy probe:** as Maya, `/doula/clients/44444444-4444-4444-8444-444444444446` (Riley / Cedar) must 404. As Jordan, Avery's contract/invoice/stub URLs must not complete or leak. Form and resource writes are org-scoped the same way: a template, assignment, resource, or share id posted from another tenant reads back as nothing.
 
 Without Stripe / Dropbox Sign / Resend / S3 keys, adapters run in **stub mode**. PHI (visit notes, health detail) is never written to email bodies, Stripe metadata, or e-sign custom fields.
@@ -151,7 +189,7 @@ npm run test
 npm run smoke   # mutates the seeded client through the funnel; re-run db:seed after
 ```
 
-Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, tenant ownership guards, and the form PHI firewall (sensitive-field detection, template parsing, and the guard that refuses to let an answer into an email).
+Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, tenant ownership guards, the form PHI firewall (sensitive-field detection, template parsing, and the guard that refuses to let an answer into an email), and the TOK-28 portal helpers: thread ordering, day grouping, timestamps, per-viewer unread counts, doula inbox thread rollup (`src/lib/messages.test.ts`), and the Home checklist labels and coral/Teal-Ink tones (`src/lib/checklist.test.ts`).
 
 ## Built vs deferred
 
@@ -161,7 +199,9 @@ Covers the pipeline state machine, the complete rule (signed ≠ complete; no si
 - Drizzle P1 schema + multi-tenant `organization_id`
 - Auth.js credentials: Membership for staff, ClientPortalAccess for families
 - Revenue-first doula Home, enforced funnel, send contract, invoices
-- Client portal checklist, sign, pay, two-way PortalMessage, forms, resources, profile
+- Client portal checklist with labelled counts, sign, pay, forms, resources (TOK-28)
+- Two-way portal messaging: shared thread UI, read receipts, doula inbox by family (TOK-28)
+- Client-editable profile: contact, address (incl. line 2), EDD, alternate (TOK-28)
 - Doula form hub: template builder → assignment → submission, with co-complete (TOK-27)
 - Doula resource library + share to portal, with a real read counter (TOK-27)
 - PHI firewall on form email: sensitive badges, answers never enqueued (TOK-27)

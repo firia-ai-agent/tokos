@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   clients,
@@ -18,9 +18,11 @@ import { requireStaff } from "@/lib/tenancy";
 import { allowedDoulaActions } from "@/lib/pipeline";
 import { getFunnelFlags } from "@/lib/funnel";
 import { stageLabel } from "@/lib/queries";
+import { unreadFor } from "@/lib/messages";
 import { formatCents } from "@/lib/money";
 import {
   confirmFitAction,
+  markClientMessagesReadAction,
   sendContractAction,
   sendIntroAction,
   startCareAction,
@@ -30,10 +32,11 @@ import {
 } from "@/app/actions/doula";
 import { coCompleteFormAction, reopenFormAction } from "@/app/actions/forms";
 import { FormAnswers, FormFieldInputs, PhiNote } from "@/components/brand/forms";
+import { MessageComposer, MessageThread } from "@/components/brand/messages";
+import { MarkThreadRead } from "@/components/brand/mark-thread-read";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 
 export default async function ClientDetailPage({
   params,
@@ -74,7 +77,8 @@ export default async function ClientDetailPage({
     .where(
       and(eq(portalMessages.organizationId, staff.organizationId), eq(portalMessages.clientId, client.id)),
     )
-    .orderBy(desc(portalMessages.sentAt));
+    .orderBy(asc(portalMessages.sentAt));
+  const unreadFromClient = unreadFor(messages, "doula");
   const formRows = await db
     .select({ assignment: formAssignments, template: formTemplates })
     .from(formAssignments)
@@ -337,25 +341,34 @@ export default async function ClientDetailPage({
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle>Portal messages</CardTitle>
+          {unreadFromClient > 0 ? (
+            <Badge variant="secondary" className="bg-coral/12 text-coral">
+              {unreadFromClient} unread
+            </Badge>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            {messages.map((message) => (
-              <div key={message.id} className="rounded-lg bg-muted p-3 text-sm">
-                <p className="text-xs text-muted-foreground">
-                  {message.direction === "outbound" ? "You" : "Client"}
-                </p>
-                <p>{message.body}</p>
-              </div>
-            ))}
-          </div>
-          <form action={sendClientMessageAction} className="space-y-2">
-            <input type="hidden" name="clientId" value={client.id} />
-            <Textarea name="body" required placeholder="Write to this family" />
-            <Button type="submit">Send</Button>
-          </form>
+          {/* Same thread the family sees at /portal/messages, mirrored. Opening the record
+              marks what they wrote as read. */}
+          <MarkThreadRead
+            unread={unreadFromClient}
+            action={markClientMessagesReadAction.bind(null, client.id)}
+          />
+          <MessageThread
+            messages={messages}
+            viewer="doula"
+            theirName={client.preferredName ?? client.displayName}
+            emptyTitle="No messages yet"
+            emptyBody={`Nothing from ${client.preferredName ?? client.displayName} yet. Write the first note and it lands in their portal.`}
+          />
+          <MessageComposer
+            action={sendClientMessageAction}
+            hiddenFields={{ clientId: client.id }}
+            placeholder="Write to this family…"
+            hint="Lands in their portal. No SMS in this milestone."
+          />
         </CardContent>
       </Card>
     </div>

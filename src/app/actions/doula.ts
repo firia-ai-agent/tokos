@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { portalMessages, providerProfiles } from "@/db/schema";
 import {
@@ -91,9 +91,37 @@ export async function sendClientMessageAction(formData: FormData) {
     direction: "outbound",
     body,
   });
+  // Both sides of the thread, plus the family's Home checklist, which counts this as
+  // unread until they open `/portal/messages`.
   revalidatePath("/doula");
+  revalidatePath("/doula/messages");
   revalidatePath(`/doula/clients/${client.id}`);
   revalidatePath("/portal");
+  revalidatePath("/portal/messages");
+}
+
+/**
+ * Opening a family's record marks what they wrote as read, the mirror of the client side.
+ * `requireStaffClient` re-checks the client belongs to this org before anything is
+ * stamped, so a posted id from another tenant updates nothing.
+ */
+export async function markClientMessagesReadAction(clientId: string) {
+  if (!clientId) return;
+  const { staff, client } = await requireStaffClient(clientId);
+  const db = getDb();
+  await db
+    .update(portalMessages)
+    .set({ readAt: new Date() })
+    .where(
+      and(
+        eq(portalMessages.organizationId, staff.organizationId),
+        eq(portalMessages.clientId, client.id),
+        eq(portalMessages.direction, "inbound"),
+        isNull(portalMessages.readAt),
+      ),
+    );
+  revalidatePath("/doula/messages");
+  revalidatePath(`/doula/clients/${client.id}`);
 }
 
 export async function saveAvailabilityAction(formData: FormData) {
