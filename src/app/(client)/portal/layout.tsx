@@ -19,7 +19,14 @@ export default async function ClientLayout({ children }: { children: React.React
   const session = await auth();
   if (!session?.user || session.user.actorType !== "client") redirect("/login");
   return (
-    <AppShell title="Your care portal" subtitle={session.user.name ?? "Client"} nav={nav}>
+    <AppShell
+      brand="Tokos"
+      brandHint="NOVA Birth Prep"
+      personName={session.user.name ?? "Client"}
+      personMeta="Your care portal"
+      nav={nav}
+      tone="client"
+    >
       {children}
     </AppShell>
   );

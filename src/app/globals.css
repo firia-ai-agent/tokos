@@ -7,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
-  --font-heading: "Fraunces", ui-serif, Georgia, serif;
+  --font-sans: var(--font-figtree), "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-fraunces), "Fraunces", ui-serif, Georgia, serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
   --color-cloud: var(--cloud);
   --color-teal: var(--teal);

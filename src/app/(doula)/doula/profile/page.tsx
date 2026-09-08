@@ -31,10 +31,20 @@ export default async function DoulaProfilePage({
   const qr = await QRCode.toDataURL(shareUrl, { margin: 1, width: 200 });
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-      <Card>
+    <div className="space-y-5">
+      <header>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal">Identity</p>
+        <h1 className="mt-1 font-heading text-[28px] font-semibold tracking-[-0.02em] text-teal-ink">
+          Public profile
+        </h1>
+        <p className="mt-1 text-[14px] text-muted-foreground">
+          Face first — families meet you on /p before they book.
+        </p>
+      </header>
+    <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+      <Card className="ring-teal/15">
         <CardHeader>
-          <CardTitle>Public profile</CardTitle>
+          <CardTitle className="text-teal-ink">Edit profile</CardTitle>
         </CardHeader>
         <CardContent>
           {photoError ? (
@@ -80,16 +90,25 @@ export default async function DoulaProfilePage({
           ) : null}
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Intro QR</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <Card className="ring-teal/15">
+        <div className="bg-teal-ink px-4 py-2.5">
+          <p className="text-[0.62rem] uppercase tracking-[0.24em] text-cloud/75">Intro QR</p>
+        </div>
+        <CardContent className="space-y-3 pt-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qr} alt="Profile QR" className="w-40" />
+          <img src={qr} alt="Profile QR" className="w-40 rounded-lg ring-1 ring-teal/15" />
           <p className="break-all text-xs text-muted-foreground">{shareUrl}</p>
+          <a
+            href={shareUrl}
+            className="inline-flex text-[13px] font-semibold text-coral hover:underline"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open public profile →
+          </a>
         </CardContent>
       </Card>
+    </div>
     </div>
   );
 }

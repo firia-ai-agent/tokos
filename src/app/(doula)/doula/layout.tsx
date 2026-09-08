@@ -18,9 +18,12 @@ export default async function DoulaLayout({ children }: { children: React.ReactN
   if (!session?.user || session.user.actorType !== "staff") redirect("/login");
   return (
     <AppShell
-      title="Practice home"
-      subtitle={`${session.user.name} · ${session.user.membershipRole}`}
+      brand="Tokos"
+      brandHint="Birth work, kept whole"
+      personName={session.user.name ?? "Doula"}
+      personMeta={session.user.membershipRole}
       nav={nav}
+      tone="doula"
     >
       {children}
     </AppShell>
