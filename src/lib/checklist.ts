@@ -135,9 +135,14 @@ export function openTaskCount(counts: ChecklistCounts): number {
   );
 }
 
-/** The line under the greeting. */
+/**
+ * The line under the greeting. "Items on your checklist" was the last piece of office
+ * vocabulary left on Home (TOK-35) — a family is not working a queue. This is the only
+ * place the number appears now; Home used to print it again as a "6 to do" badge, which
+ * read like a ticket count sitting next to a welcome.
+ */
 export function checklistSummary(counts: ChecklistCounts): string {
   const open = openTaskCount(counts);
-  if (open === 0) return "You are all caught up";
-  return `${open} item${open === 1 ? "" : "s"} on your checklist`;
+  if (open === 0) return "Nothing waiting on you today";
+  return `${open} thing${open === 1 ? "" : "s"} waiting for you`;
 }

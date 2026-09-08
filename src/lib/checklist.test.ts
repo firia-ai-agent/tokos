@@ -93,9 +93,18 @@ describe("checklist summary", () => {
   });
 
   it("says caught up at zero and singularises one", () => {
-    expect(checklistSummary(caughtUp)).toBe("You are all caught up");
-    expect(checklistSummary({ ...caughtUp, openInvoices: 1 })).toBe("1 item on your checklist");
-    expect(checklistSummary({ ...caughtUp, openInvoices: 2 })).toBe("2 items on your checklist");
+    expect(checklistSummary(caughtUp)).toBe("Nothing waiting on you today");
+    expect(checklistSummary({ ...caughtUp, openInvoices: 1 })).toBe("1 thing waiting for you");
+    expect(checklistSummary({ ...caughtUp, openInvoices: 2 })).toBe("2 things waiting for you");
+  });
+
+  it("keeps office vocabulary out of the greeting line (TOK-35)", () => {
+    for (const open of [0, 1, 6]) {
+      const line = checklistSummary({ ...caughtUp, openInvoices: open }).toLowerCase();
+      expect(line).not.toContain("checklist");
+      expect(line).not.toContain("item");
+      expect(line).not.toContain("to do");
+    }
   });
 });
 

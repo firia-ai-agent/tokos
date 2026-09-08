@@ -133,6 +133,25 @@ sign-in email, phone, estimated due date), **Address** (including line 2), and
 portal, with a saved banner after the redirect. An emptied EDD writes `NULL`, not `""`.
 Health detail belongs on forms, not here.
 
+**Portal Home care card and practice strip (TOK-35):** Home opens on the arrangement, not
+on counts. Under the welcome, a **Your care team** card names the assigned doula — resolved
+by the same `resolveAssignedDoulaName` every other client surface uses — with her photo and
+credentials, then the three facts a family actually holds in their head: **Package**, **Due
+date**, and **Location**. `src/lib/care-team.ts` is where those are picked and worded: the
+sent agreement's package beats the engagement's (a `void` or `draft` contract is never read
+off), the family's own city beats the engagement's location, which beats the practice's
+service area — labelled **Service area** when it is the practice's coverage rather than the
+family's address — and a `date` column is anchored at noon so an EDD reads as the stored day
+in every US zone. The due date carries a quiet "in 3 weeks"; past the date it goes silent
+rather than counting up. Before a family is matched, the card names the practice and says the
+doula is named there once they are. No stage badge, ever — a family does not read their own
+pipeline.
+
+At the foot of Home, the practice strip carries the portal name, the **on-call** number
+formatted and dialable (`tel:`), and the confidentiality line. The greeting also lost the
+last of the office vocabulary: "6 items on your checklist" plus a "6 to do" chip is now one
+line, "6 things waiting for you". Helpers are unit tested in `src/lib/care-team.test.ts`.
+
 **Agency roster, brand, and email templates (TOK-29):** `/doula/team` is the agency
 surface. **Roster** lists every membership with the person's credentials, the role
 (Founder / Admin / Doula), and how many families they are primary on. **Invite a doula**
@@ -261,7 +280,7 @@ npm run test
 npm run smoke   # mutates the seeded client through the funnel; re-run db:seed after
 ```
 
-Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, tenant ownership guards, the form PHI firewall (sensitive-field detection, template parsing, and the guard that refuses to let an answer into an email), the TOK-28 portal helpers: thread ordering, day grouping, timestamps, per-viewer unread counts, doula inbox thread rollup (`src/lib/messages.test.ts`), and the Home checklist labels and coral/Teal-Ink tones (`src/lib/checklist.test.ts`), and the TOK-29 agency helpers: invite token shape and uniqueness, expiry, pending/expired/accepted status, the invite and match guards including the cross-tenant refusals (`src/lib/team.test.ts`), brand sanitising for hex / URL / phone / footer HTML (`src/lib/brand.test.ts`), and the template variable allowlist and version bump (`src/lib/email-templates.test.ts`).
+Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, tenant ownership guards, the form PHI firewall (sensitive-field detection, template parsing, and the guard that refuses to let an answer into an email), the TOK-28 portal helpers: thread ordering, day grouping, timestamps, per-viewer unread counts, doula inbox thread rollup (`src/lib/messages.test.ts`), and the Home checklist labels and coral/Teal-Ink tones (`src/lib/checklist.test.ts`), and the TOK-29 agency helpers: invite token shape and uniqueness, expiry, pending/expired/accepted status, the invite and match guards including the cross-tenant refusals (`src/lib/team.test.ts`), brand sanitising for hex / URL / phone / footer HTML (`src/lib/brand.test.ts`), and the template variable allowlist and version bump (`src/lib/email-templates.test.ts`), and the TOK-35 Home care-card formatters: package precedence over a void or draft agreement, noon-anchored EDD wording and its silent past-due case, the client / engagement / service-area location fallback, and on-call phone formatting (`src/lib/care-team.test.ts`).
 
 ## Built vs deferred
 
@@ -276,6 +295,7 @@ Covers the pipeline state machine, the complete rule (signed ≠ complete; no si
 - Org brand editor: portal name, colour, website, on-call, footer, timezone (TOK-29)
 - Full EmailTemplate editor: enable, wording, preview, append-only versions (TOK-29)
 - Client portal checklist with labelled counts, sign, pay, forms, resources (TOK-28)
+- Portal Home care card: doula, package, EDD, location + practice strip (TOK-35)
 - Two-way portal messaging: shared thread UI, read receipts, doula inbox by family (TOK-28)
 - Client-editable profile: contact, address (incl. line 2), EDD, alternate (TOK-28)
 - Doula form hub: template builder → assignment → submission, with co-complete (TOK-27)

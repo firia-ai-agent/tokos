@@ -6,8 +6,14 @@ import { organizations } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { clientChecklist } from "@/lib/queries";
 import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
-import { checklistCards, checklistSummary, openTaskCount } from "@/lib/checklist";
-import { Badge } from "@/components/ui/badge";
+import {
+  formatPhoneNumber,
+  locationFieldLabel,
+  phoneHref,
+  resolveCareTeamCard,
+} from "@/lib/care-team";
+import { checklistCards, checklistSummary } from "@/lib/checklist";
+import { ProviderAvatar } from "@/components/brand/avatar";
 import { cn } from "@/lib/utils";
 
 export default async function PortalHomePage({
@@ -39,8 +45,29 @@ export default async function PortalHomePage({
     clientId: session.clientId,
   });
 
+  // The arrangement behind the chores (TOK-35): package, due date, where care happens.
+  const care = await resolveCareTeamCard({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+    doulaUserId: doula.userId,
+  });
+
   const cards = checklistCards(checklist, doula.name);
-  const open = openTaskCount(checklist);
+
+  // `source: "organization"` means the practice is standing in for a person who has not
+  // been matched yet — the card says so rather than captioning a practice "primary doula".
+  const matched = doula.source !== "organization";
+  const facts: { label: string; value: string; note?: string }[] = [];
+  if (care.packageLabel) facts.push({ label: "Package", value: care.packageLabel });
+  if (care.eddLabel) {
+    facts.push({ label: "Due date", value: care.eddLabel, note: care.eddNote ?? undefined });
+  }
+  if (care.location) {
+    facts.push({ label: locationFieldLabel(care.location.source), value: care.location.label });
+  }
+
+  const onCall = formatPhoneNumber(org?.onCallPhone);
+  const onCallHref = phoneHref(org?.onCallPhone);
 
   return (
     <div className="space-y-6">
@@ -57,30 +84,58 @@ export default async function PortalHomePage({
         </p>
       ) : null}
 
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal">
-            {practice}
-          </p>
-          <h1 className="mt-1 font-heading text-[28px] font-semibold tracking-[-0.02em] text-teal-ink sm:text-[32px]">
-            Welcome, {firstName}
-          </h1>
-          <p className="mt-1.5 text-[14.5px] text-muted-foreground">
-            {format(new Date(), "EEEE, MMMM d")} · {checklistSummary(checklist)}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {open > 0 ? (
-            <Badge variant="secondary" className="bg-coral/12 text-coral">
-              {open} to do
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="bg-teal/12 text-teal-ink">
-              Caught up
-            </Badge>
-          )}
-        </div>
+      <header>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal">
+          {practice}
+        </p>
+        <h1 className="mt-1 font-heading text-[28px] font-semibold tracking-[-0.02em] text-teal-ink sm:text-[32px]">
+          Welcome, {firstName}
+        </h1>
+        {/* The open count is said once, here — a second "6 to do" chip read like a queue. */}
+        <p className="mt-1.5 text-[14.5px] text-muted-foreground">
+          {format(new Date(), "EEEE, MMMM d")} · {checklistSummary(checklist)}
+        </p>
       </header>
+
+      {matched || facts.length > 0 ? (
+        <section className="rounded-xl bg-card p-5 ring-1 ring-teal/15">
+          <div className="flex items-center gap-4">
+            {matched ? (
+              <ProviderAvatar name={doula.name} photoFileId={care.photoFileId} size={56} />
+            ) : null}
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal">
+                Your care team
+              </p>
+              <p className="mt-1 font-heading text-[21px] font-semibold tracking-[-0.01em] text-teal-ink">
+                {doula.name}
+              </p>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">
+                {matched
+                  ? ["Primary doula", care.credentialsLabel].filter(Boolean).join(" · ")
+                  : "Your doula is named here as soon as you are matched"}
+              </p>
+            </div>
+          </div>
+          {facts.length > 0 ? (
+            <dl className="mt-4 grid gap-x-8 gap-y-3 border-t border-teal/10 pt-4 sm:grid-cols-3">
+              {facts.map((fact) => (
+                <div key={fact.label}>
+                  <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    {fact.label}
+                  </dt>
+                  <dd className="mt-0.5 text-[14px] text-teal-ink">
+                    {fact.value}
+                    {fact.note ? (
+                      <span className="text-muted-foreground"> · {fact.note}</span>
+                    ) : null}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
@@ -134,16 +189,31 @@ export default async function PortalHomePage({
         ))}
       </section>
 
-      {org?.confidentialityBlurb || org?.onCallPhone ? (
+      {/* The practice, reachable: who they are, the number that is answered, and what
+          stays private. Dubsado's Home carries the same strip (TOK-35). */}
+      {onCall || org?.confidentialityBlurb ? (
         <section className="rounded-xl bg-card px-5 py-4 ring-1 ring-teal/15">
-          {org.confidentialityBlurb ? (
-            <p className="text-[13px] leading-relaxed text-muted-foreground">
-              {org.confidentialityBlurb}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal">
+            {practice}
+          </p>
+          {onCall ? (
+            <p className="mt-1.5 text-[14px] text-teal-ink">
+              On call, day or night ·{" "}
+              {onCallHref ? (
+                <a
+                  href={onCallHref}
+                  className="font-semibold underline-offset-2 hover:underline"
+                >
+                  {onCall}
+                </a>
+              ) : (
+                <span className="font-semibold">{onCall}</span>
+              )}
             </p>
           ) : null}
-          {org.onCallPhone ? (
-            <p className="mt-2 text-[13px] text-teal-ink">
-              <span className="font-semibold">On call</span> · {org.onCallPhone}
+          {org?.confidentialityBlurb ? (
+            <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+              {org.confidentialityBlurb}
             </p>
           ) : null}
         </section>
