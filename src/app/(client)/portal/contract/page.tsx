@@ -47,7 +47,7 @@ export default async function ContractPage() {
         return (
           <div key={contract.id} className="rounded-xl border bg-card p-4">
             <div className="flex items-center justify-between">
-              <p className="font-medium">{contract.packageLabel}</p>
+              <p className="font-medium">{contract.packageLabel} with {doula.name}</p>
               <Badge
                 variant="secondary"
                 className={
