@@ -16,12 +16,12 @@ export async function POST(request: Request) {
   }
 
   const event = payload.event as
-    | { event_type?: string; event_time?: string; event_hash?: string }
+    | { event_type?: string; event_time?: string | number; event_hash?: string }
     | undefined;
 
   const verified = verifyDropboxSignEvent({
     apiKey: process.env.DROPBOX_SIGN_API_KEY,
-    eventTime: event?.event_time,
+    eventTime: event?.event_time == null ? undefined : String(event.event_time),
     eventType: event?.event_type,
     eventHash: event?.event_hash,
   });
