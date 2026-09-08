@@ -15,8 +15,10 @@ const caughtUp: ChecklistCounts = {
   upcomingConsults: 0,
 };
 
-const byKey = (counts: ChecklistCounts) =>
-  Object.fromEntries(checklistCards(counts).map((card) => [card.key, card] as const));
+const byKey = (counts: ChecklistCounts, doulaName?: string) =>
+  Object.fromEntries(
+    checklistCards(counts, doulaName).map((card) => [card.key, card] as const),
+  );
 
 describe("client Home checklist", () => {
   it("keeps all six cards, in order", () => {
@@ -94,5 +96,22 @@ describe("checklist summary", () => {
     expect(checklistSummary(caughtUp)).toBe("You are all caught up");
     expect(checklistSummary({ ...caughtUp, openInvoices: 1 })).toBe("1 item on your checklist");
     expect(checklistSummary({ ...caughtUp, openInvoices: 2 })).toBe("2 items on your checklist");
+  });
+});
+
+describe("named card copy (TOK-38)", () => {
+  it("names the assigned doula instead of saying 'your doula'", () => {
+    const cards = byKey(caughtUp, "Maya Chen");
+    expect(cards.unreadMessages.detail).toBe("Write to Maya Chen, and read the replies");
+    expect(cards.openResources.detail).toBe("Handouts Maya Chen shared for birth prep");
+    expect(cards.upcomingConsults.detail).toBe("Fit visits on Maya Chen's calendar");
+    for (const card of checklistCards(caughtUp, "Maya Chen")) {
+      expect(card.detail.toLowerCase()).not.toContain("your doula");
+    }
+  });
+
+  it("falls back to the practice name when nobody is assigned yet", () => {
+    const cards = byKey(caughtUp, "NOVA Birth Prep");
+    expect(cards.unreadMessages.detail).toBe("Write to NOVA Birth Prep, and read the replies");
   });
 });

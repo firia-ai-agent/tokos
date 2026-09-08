@@ -5,6 +5,7 @@ import { contracts } from "@/db/schema";
 import { markAgreementSigned } from "@/lib/funnel";
 import { clientOwnsRow } from "@/lib/ownership";
 import { requireClientPage } from "@/lib/tenancy";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { DemoBanner } from "@/components/brand/shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +43,11 @@ export default async function StubSignPage({
     .limit(1);
   if (!contract || !clientOwnsRow(session, contract)) redirect("/portal");
 
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
+
   return (
     <div className="min-h-screen">
       <DemoBanner />
@@ -59,8 +65,8 @@ export default async function StubSignPage({
             <form action={completeStubSign} className="space-y-4">
               <input type="hidden" name="contractId" value={contractId} />
               <p className="text-sm leading-relaxed text-muted-foreground">
-                I intend to work with this doula under the package we discussed. This is not a
-                clinical consent and does not finish the contract by itself.
+                I intend to work with {doula.name} under the package we discussed. This is
+                not a clinical consent and does not finish the contract by itself.
               </p>
               <Button type="submit" className="w-full">
                 Sign and return to Tokos

@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { contracts } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { signContractAction } from "@/app/actions/client";
 import { formatCents } from "@/lib/money";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,10 @@ import { Badge } from "@/components/ui/badge";
 
 export default async function ContractPage() {
   const session = await requireClient();
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
   const db = getDb();
   const rows = await db
     .select()
@@ -23,7 +28,7 @@ export default async function ContractPage() {
     return (
       <EmptyState
         title="No agreement yet"
-        body="After a fit consult, your doula sends a care agreement here."
+        body={`After a fit consult, ${doula.name} sends a care agreement here.`}
       />
     );
   }

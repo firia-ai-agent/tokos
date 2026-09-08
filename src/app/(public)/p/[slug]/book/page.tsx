@@ -51,6 +51,7 @@ export default async function BookConsultPage({
     userId: row.profile.userId,
   });
   const error = bookingError(query.error);
+  const firstName = row.user.name.trim().split(/\s+/)[0];
 
   return (
     <div className="min-h-screen">
@@ -69,7 +70,9 @@ export default async function BookConsultPage({
           </div>
         </div>
         <p className="mb-6 mt-3 text-sm text-muted-foreground">
-          This opens a lead on their Tokos calendar. A signature is never complete by itself.
+          This starts your care conversation — a fit consult on {firstName}&rsquo;s Tokos
+          calendar. Nothing is signed today, and signing later shows intent, not a finished
+          agreement.
         </p>
         {error ? (
           <Alert variant="destructive" className="mb-4">

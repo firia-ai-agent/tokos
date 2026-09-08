@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/tenancy";
-import { listOrgClients, orgMatches, stageLabel } from "@/lib/queries";
+import { listOrgClients, orgMatches } from "@/lib/queries";
+import { stageLabel } from "@/lib/pipeline";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/brand/states";
 

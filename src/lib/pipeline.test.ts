@@ -4,8 +4,12 @@ import {
   canEnterAgreementSigned,
   canEnterContractComplete,
   canTransition,
+  clientStageLabel,
+  CLIENT_STAGE_LABELS,
   PIPELINE_STAGES,
   plannedHops,
+  stageLabel,
+  STAGE_LABELS,
 } from "./pipeline";
 
 const unsigned = {
@@ -184,5 +188,37 @@ describe("skipping", () => {
         agreementSigned: true,
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe("stage labels", () => {
+  it("keeps the staff wording, pipeline vocabulary and all", () => {
+    expect(STAGE_LABELS.new_lead).toBe("New lead");
+    expect(stageLabel("new_lead")).toBe("New lead");
+    expect(STAGE_LABELS.contract_complete).toBe("Contract complete");
+  });
+
+  it("gives every canonical stage a family label", () => {
+    for (const stage of PIPELINE_STAGES) {
+      expect(CLIENT_STAGE_LABELS[stage]?.trim()).toBeTruthy();
+      expect(clientStageLabel(stage)).toBe(CLIENT_STAGE_LABELS[stage]);
+    }
+    expect(Object.keys(CLIENT_STAGE_LABELS).sort()).toEqual([...PIPELINE_STAGES].sort());
+  });
+
+  it("never shows a family CRM language or a raw stage code (TOK-32)", () => {
+    for (const stage of PIPELINE_STAGES) {
+      const label = clientStageLabel(stage);
+      expect(label.toLowerCase()).not.toContain("lead");
+      expect(label.toLowerCase()).not.toContain("pipeline");
+      expect(label).not.toContain("_");
+    }
+    expect(clientStageLabel("new_lead")).toBe("Getting started");
+  });
+
+  it("falls back to a family label rather than echoing an unknown code", () => {
+    expect(clientStageLabel("some_new_stage")).toBe("Getting started");
+    // Staff keep the raw value, because a code they can grep is the useful answer.
+    expect(stageLabel("some_new_stage")).toBe("some_new_stage");
   });
 });

@@ -4,7 +4,9 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { organizations } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
-import { clientChecklist, stageLabel } from "@/lib/queries";
+import { clientChecklist } from "@/lib/queries";
+import { clientStageLabel } from "@/lib/pipeline";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { checklistCards, checklistSummary, openTaskCount } from "@/lib/checklist";
 import { getFunnelFlags } from "@/lib/funnel";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +36,13 @@ export default async function PortalHomePage({
     .limit(1);
   const practice = org?.portalName ?? org?.name ?? "Your birth team";
 
-  const cards = checklistCards(checklist);
+  // One resolve per render: every card names the same person the messages thread does.
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
+
+  const cards = checklistCards(checklist, doula.name);
   const open = openTaskCount(checklist);
 
   return (
@@ -73,7 +81,7 @@ export default async function PortalHomePage({
             </Badge>
           )}
           <Badge className="bg-teal-ink text-cloud hover:bg-teal-ink">
-            {stageLabel(funnel.stage)}
+            {clientStageLabel(funnel.stage)}
           </Badge>
         </div>
       </header>

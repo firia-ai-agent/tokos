@@ -1,7 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { getDb } from "@/db";
-import { assignments } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { bookClientConsultAction } from "@/app/actions/client";
 import {
   SLOT_REJECTION_MESSAGES,
@@ -30,23 +28,23 @@ export default async function PortalCalendarPage({
 }) {
   const session = await requireClient();
   const query = await searchParams;
-  const db = getDb();
   // Upcoming only — a consult that already happened is history, not a plan.
   const { upcoming } = await listClientConsults({
     organizationId: session.organizationId,
     clientId: session.clientId,
   });
   const timeZone = await organizationTimezone(session.organizationId);
-  const [assignment] = await db
-    .select()
-    .from(assignments)
-    .where(and(eq(assignments.clientId, session.clientId), eq(assignments.status, "active")))
-    .limit(1);
+  // The same resolve the rest of the portal uses, so the calendar you book on belongs to
+  // the doula the portal names — and the read is org-scoped (TOK-38).
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
 
-  const slots = assignment
+  const slots = doula.userId
     ? await listOpenSlots({
         organizationId: session.organizationId,
-        userId: assignment.userId,
+        userId: doula.userId,
       })
     : [];
   const error = rejectionMessage(query.error);
@@ -62,7 +60,14 @@ export default async function PortalCalendarPage({
       <section className="space-y-3">
         <h3 className="text-sm font-medium">Upcoming consults</h3>
         {upcoming.length === 0 ? (
-          <EmptyState title="Nothing booked" body="Pick a fit window below." />
+          <EmptyState
+            title="Nothing booked"
+            body={
+              doula.userId
+                ? `Pick a fit window on ${doula.firstName}'s calendar below.`
+                : "A fit window will open here once you are matched with a doula."
+            }
+          />
         ) : (
           <div className="space-y-2">
             {upcoming.map((event) => (
@@ -73,11 +78,11 @@ export default async function PortalCalendarPage({
           </div>
         )}
       </section>
-      {assignment && slots.length > 0 ? (
+      {doula.userId && slots.length > 0 ? (
         <section className="space-y-3">
-          <h3 className="text-sm font-medium">Book another</h3>
+          <h3 className="text-sm font-medium">Book another with {doula.firstName}</h3>
           <form action={bookClientConsultAction} className="space-y-3">
-            <input type="hidden" name="assigneeUserId" value={assignment.userId} />
+            <input type="hidden" name="assigneeUserId" value={doula.userId} />
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Open times</legend>
               {slots.slice(0, 10).map((slot) => (

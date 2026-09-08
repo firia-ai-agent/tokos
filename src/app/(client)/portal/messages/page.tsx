@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { organizations, portalMessages } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { unreadFor } from "@/lib/messages";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import {
   markPortalMessagesReadAction,
   sendPortalMessageAction,
@@ -31,6 +32,12 @@ export default async function PortalMessagesPage() {
     .limit(1);
   const practice = org?.portalName ?? org?.name ?? "NOVA Birth Prep";
 
+  // The thread is with a person, so it is signed with that person's name (TOK-38).
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
+
   const unread = unreadFor(rows, "client");
 
   return (
@@ -47,10 +54,10 @@ export default async function PortalMessagesPage() {
         </h1>
         <p className="mt-1.5 text-[14.5px] text-muted-foreground">
           {rows.length === 0
-            ? "One thread with your doula, kept inside your portal."
+            ? `One thread with ${doula.name}, kept inside your portal.`
             : unread > 0
-              ? `${unread} new from your doula.`
-              : "You are up to date with your doula."}
+              ? `${unread} new from ${doula.firstName}.`
+              : `You are up to date with ${doula.firstName}.`}
         </p>
       </header>
 
@@ -58,13 +65,13 @@ export default async function PortalMessagesPage() {
         <MessageThread
           messages={rows}
           viewer="client"
-          theirName="Your doula"
+          theirName={doula.name}
           emptyTitle="Start the conversation"
-          emptyBody="Ask about a visit, a symptom you are wondering about, or anything on your mind. Your doula answers here, and it all stays in Tokos."
+          emptyBody={`Ask about a visit, a symptom you are wondering about, or anything on your mind. ${doula.firstName} answers here, and it all stays in Tokos.`}
         />
         <MessageComposer
           action={sendPortalMessageAction}
-          placeholder="Write to your doula…"
+          placeholder={`Write to ${doula.firstName}…`}
           hint="Stays in your portal. Not a text, not an email thread."
           className="mt-5"
         />

@@ -18,7 +18,8 @@ import {
 import { requireStaff } from "@/lib/tenancy";
 import { allowedDoulaActions } from "@/lib/pipeline";
 import { getFunnelFlags } from "@/lib/funnel";
-import { stageLabel, teamRoster } from "@/lib/queries";
+import { teamRoster } from "@/lib/queries";
+import { stageLabel } from "@/lib/pipeline";
 import { canManageTeam, roleLabel } from "@/lib/team";
 import { assignPrimaryDoulaAction } from "@/app/actions/team";
 import { unreadFor } from "@/lib/messages";

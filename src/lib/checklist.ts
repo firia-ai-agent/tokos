@@ -34,7 +34,8 @@ type CardSpec = {
   key: keyof ChecklistCounts;
   href: string;
   label: string;
-  detail: string;
+  /** Named copy: the family reads "Maya Chen", never "your doula" (TOK-38). */
+  detail: (doula: string) => string;
   /** Word after the count: "2 open", "1 unread". */
   noun: string;
   /** What to say at zero. */
@@ -48,7 +49,7 @@ const CARDS: readonly CardSpec[] = [
     key: "incompleteForms",
     href: "/portal/forms",
     label: "Forms",
-    detail: "Getting-to-know-you and preferences",
+    detail: () => "Getting-to-know-you and preferences",
     noun: "open",
     zero: "All done",
     chore: true,
@@ -57,7 +58,7 @@ const CARDS: readonly CardSpec[] = [
     key: "unsignedContracts",
     href: "/portal/contract",
     label: "Agreement",
-    detail: "Review and sign when you are ready",
+    detail: () => "Review and sign when you are ready",
     noun: "to sign",
     zero: "Nothing to sign",
     chore: true,
@@ -66,7 +67,7 @@ const CARDS: readonly CardSpec[] = [
     key: "openInvoices",
     href: "/portal/pay",
     label: "Pay",
-    detail: "Invoices open in your portal",
+    detail: () => "Invoices open in your portal",
     noun: "open",
     zero: "Nothing due",
     chore: true,
@@ -75,7 +76,7 @@ const CARDS: readonly CardSpec[] = [
     key: "unreadMessages",
     href: "/portal/messages",
     label: "Messages",
-    detail: "Write to your doula, and read her replies",
+    detail: (doula) => `Write to ${doula}, and read the replies`,
     noun: "unread",
     zero: "No new messages",
     chore: true,
@@ -84,7 +85,7 @@ const CARDS: readonly CardSpec[] = [
     key: "openResources",
     href: "/portal/resources",
     label: "Resources",
-    detail: "Handouts shared for birth prep",
+    detail: (doula) => `Handouts ${doula} shared for birth prep`,
     noun: "new",
     zero: "All read",
     chore: false,
@@ -93,21 +94,29 @@ const CARDS: readonly CardSpec[] = [
     key: "upcomingConsults",
     href: "/portal/calendar",
     label: "Consults",
-    detail: "Fit visits on your doula's calendar",
+    detail: (doula) => `Fit visits on ${doula}'s calendar`,
     noun: "booked",
     zero: "None booked",
     chore: false,
   },
 ];
 
-export function checklistCards(counts: ChecklistCounts): ChecklistCard[] {
+/**
+ * `doulaName` is the assigned doula's display name — "Maya Chen" — or the practice name
+ * when the family has not been matched yet. It is resolved once per render by
+ * `resolveAssignedDoulaName`, so every card names the same person.
+ */
+export function checklistCards(
+  counts: ChecklistCounts,
+  doulaName = "your care team",
+): ChecklistCard[] {
   return CARDS.map((spec) => {
     const count = counts[spec.key] ?? 0;
     return {
       key: spec.key,
       href: spec.href,
       label: spec.label,
-      detail: spec.detail,
+      detail: spec.detail(doulaName),
       count,
       countLabel: count > 0 ? `${count} ${spec.noun}` : spec.zero,
       actionable: spec.chore && count > 0,

@@ -3,6 +3,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { formAssignments, formSubmissions, formTemplates } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { completeFormAction } from "@/app/actions/client";
 import { FormAnswers, FormFieldInputs, PhiNote } from "@/components/brand/forms";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,10 @@ import { cn } from "@/lib/utils";
 
 export default async function PortalFormsPage() {
   const session = await requireClient();
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
   const db = getDb();
   const rows = await db
     .select({ assignment: formAssignments, template: formTemplates })
@@ -27,7 +32,10 @@ export default async function PortalFormsPage() {
 
   if (rows.length === 0) {
     return (
-      <EmptyState title="No forms yet" body="Your doula will assign these when you are ready." />
+      <EmptyState
+        title="No forms yet"
+        body={`${doula.name} will assign these when you are ready.`}
+      />
     );
   }
 
@@ -101,7 +109,7 @@ export default async function PortalFormsPage() {
                 <div className="space-y-3 px-5 py-4">
                   <FormAnswers schema={template.schemaJson} answers={submission?.answersJson} />
                   <p className="text-[12.5px] text-muted-foreground">
-                    Want to change something? Message your doula and she can reopen it.
+                    Want to change something? Message {doula.firstName} to have it reopened.
                   </p>
                 </div>
               ) : (

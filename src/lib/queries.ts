@@ -22,7 +22,7 @@ import {
   users,
 } from "@/db/schema";
 import { formatCents } from "@/lib/money";
-import { STAGE_LABELS, type PipelineStageName } from "@/lib/pipeline";
+import { stageLabel } from "@/lib/pipeline";
 
 export type HomeKpi = {
   label: string;
@@ -365,10 +365,6 @@ export async function clientChecklist(organizationId: string, clientId: string) 
     openResources: Number(resourcesOpen?.n ?? 0),
     upcomingConsults: upcoming.length,
   };
-}
-
-export function stageLabel(stage: string) {
-  return STAGE_LABELS[stage as PipelineStageName] ?? stage;
 }
 
 export async function listOrgClients(organizationId: string, doulaUserId: string) {

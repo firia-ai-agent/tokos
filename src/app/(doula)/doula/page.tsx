@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { requireStaff } from "@/lib/tenancy";
-import { revenueHome, stageLabel } from "@/lib/queries";
+import { revenueHome } from "@/lib/queries";
+import { stageLabel } from "@/lib/pipeline";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 

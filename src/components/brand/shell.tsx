@@ -71,7 +71,7 @@ export function AppShell({
         ]
       : [
           { label: "Home", href: "/portal", keywords: "home checklist" },
-          { label: "Forms", href: "/portal/forms", keywords: "forms intake" },
+          { label: "Forms", href: "/portal/forms", keywords: "forms questions preferences" },
           { label: "Resources", href: "/portal/resources", keywords: "resources education" },
           { label: "Agreement", href: "/portal/contract", keywords: "agreement contract sign" },
           { label: "Pay", href: "/portal/pay", keywords: "pay invoice" },

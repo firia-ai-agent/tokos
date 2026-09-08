@@ -9,6 +9,7 @@ export const PIPELINE_STAGES = [
 
 export type PipelineStageName = (typeof PIPELINE_STAGES)[number];
 
+/** Staff wording. The doula pipeline is a pipeline, and `/doula/*` may say so. */
 export const STAGE_LABELS: Record<PipelineStageName, string> = {
   new_lead: "New lead",
   intro: "Intro",
@@ -17,6 +18,33 @@ export const STAGE_LABELS: Record<PipelineStageName, string> = {
   contract_complete: "Contract complete",
   active_care: "Active care",
 };
+
+/**
+ * Family wording for the same canonical stages (TOK-32). A family is never a "lead" and
+ * never sees a stage code: the portal and every public page read from this map, while
+ * `/doula/*` keeps `STAGE_LABELS`. The DB column is unchanged — this is a display map.
+ */
+export const CLIENT_STAGE_LABELS: Record<PipelineStageName, string> = {
+  new_lead: "Getting started",
+  intro: "Intro sent",
+  fit: "Fit scheduled",
+  agreement_signed: "Agreement signed",
+  contract_complete: "Ready for care",
+  active_care: "Active care",
+};
+
+/** Staff label for a stage string, falling back to the raw value staff can debug. */
+export function stageLabel(stage: string): string {
+  return STAGE_LABELS[stage as PipelineStageName] ?? stage;
+}
+
+/**
+ * Family label for a stage string. An unknown stage falls back to the friendliest
+ * label rather than echoing a code — a family should never read `new_lead`.
+ */
+export function clientStageLabel(stage: string): string {
+  return CLIENT_STAGE_LABELS[stage as PipelineStageName] ?? CLIENT_STAGE_LABELS.new_lead;
+}
 
 export type FunnelFlags = {
   fitConfirmed: boolean;

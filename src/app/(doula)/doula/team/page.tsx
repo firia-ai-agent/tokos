@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { requireStaff } from "@/lib/tenancy";
-import { orgMatches, orgStaffInvites, stageLabel, teamRoster } from "@/lib/queries";
+import { orgMatches, orgStaffInvites, teamRoster } from "@/lib/queries";
+import { stageLabel } from "@/lib/pipeline";
 import {
   INVITABLE_ROLES,
   INVITE_TTL_DAYS,

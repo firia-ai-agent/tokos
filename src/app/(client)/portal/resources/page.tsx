@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { resources, resourceShares } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { markResourceDoneAction } from "@/app/actions/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,10 @@ import { EmptyState } from "@/components/brand/states";
 
 export default async function ResourcesPage() {
   const session = await requireClient();
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
   const db = getDb();
   const rows = await db
     .select({ share: resourceShares, resource: resources })
@@ -24,7 +29,12 @@ export default async function ResourcesPage() {
     .orderBy(desc(resourceShares.sharedAt));
 
   if (rows.length === 0) {
-    return <EmptyState title="No handouts yet" body="Shared resources will appear here." />;
+    return (
+      <EmptyState
+        title="No handouts yet"
+        body={`Anything ${doula.name} shares for birth prep will appear here.`}
+      />
+    );
   }
 
   const unread = rows.filter((row) => !row.share.completedAt).length;
@@ -37,8 +47,8 @@ export default async function ResourcesPage() {
         </h1>
         <p className="mt-1.5 text-[14.5px] text-muted-foreground">
           {unread === 0
-            ? "You have read everything your doula shared."
-            : `${unread} new from your doula.`}
+            ? `You have read everything ${doula.name} shared.`
+            : `${unread} new from ${doula.firstName}.`}
         </p>
       </header>
 

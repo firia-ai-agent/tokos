@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { clients } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { updateClientProfileAction } from "@/app/actions/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +68,10 @@ export default async function ClientProfilePage({
 }) {
   const query = await searchParams;
   const session = await requireClient();
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
   const db = getDb();
   const [client] = await db
     .select()
@@ -84,18 +89,21 @@ export default async function ClientProfilePage({
           Your profile
         </h1>
         <p className="mt-1.5 text-[14.5px] text-muted-foreground">
-          What your doula sees on your record. Change it any time.
+          What {doula.name} sees on your record. Change it any time.
         </p>
       </header>
 
       {query.saved ? (
         <p className="rounded-lg bg-teal/10 px-3 py-2 text-sm text-teal-ink ring-1 ring-teal/20">
-          Profile saved. Your doula sees this on your record.
+          Profile saved. {doula.firstName} sees this on your record.
         </p>
       ) : null}
 
       <form action={updateClientProfileAction} className="space-y-4">
-        <Section title="Contact" note="Email is how you sign in — ask your doula to change it.">
+        <Section
+          title="Contact"
+          note={`Email is how you sign in — ask ${doula.firstName} to change it.`}
+        >
           <Field
             name="preferredName"
             label="Preferred name"
@@ -159,7 +167,10 @@ export default async function ClientProfilePage({
           </div>
         </Section>
 
-        <Section title="Alternate" note="Who your doula reaches if she cannot reach you.">
+        <Section
+          title="Alternate"
+          note={`Who ${doula.firstName} reaches if you cannot be reached.`}
+        >
           <Field
             name="alternateContactName"
             label="Alternate contact"
