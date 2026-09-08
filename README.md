@@ -57,11 +57,25 @@ Demo logins after seed (password `tokos-demo`):
 
 | Role | Email | Notes |
 | --- | --- | --- |
-| Doula / owner | `maya@novabirthpartners.com` | Sees Jordan **and** Avery (NOVA) |
+| Doula / owner | `maya@novabirthpartners.com` | Sees Jordan **and** Avery (NOVA). Owner ⇒ **agency shell** |
+| Doula / member | `priya@novabirthpartners.com` | Role `doula` ⇒ **minimal doula shell** (TOK-34). Backup on Avery |
 | Client | `jordan.rivera@example.com` | Primary happy-path client |
 | Client | `avery.kim@example.com` | Second NOVA client at `new_lead` |
 | Other-org client | `riley.voss@example.com` | Cedar Birth Collective — Maya must not see |
 | Other-org doula / owner | `sam@cedarbirth.co` | Owns Cedar Birth Collective — must not see or write to NOVA clients (IDOR / TOK-20 probe) |
+
+**Doula vs agency shell (TOK-34):** the same `/doula/*` routes render two shells, chosen from
+the membership role. Sign in as **Maya** (owner) and the rail reads **NOVA** over Home / Clients /
+Calendar, Workspace carries **Team** and **Settings**, `/doula/clients` is the org-wide
+**Pipeline** with the stage legend and a count of families with no primary, top-bar **New** opens
+**Open pipeline**, and search offers **Clients / pipeline**, Team, and both Settings tabs. Sign in
+as **Priya** (role `doula`) and the same rail reads **My practice**, Workspace is Messages and
+Profile only, `/doula/clients` is **Your families** — assignment-scoped, so just Avery — top-bar
+**New** offers **Open clients** and **New family · share Book Consult**, and search offers
+**Clients** with no route to Team or Brand. `/doula/team`, `/doula/settings`, and
+`/doula/settings/email` are agency surfaces: a `doula` who deep-links to one is redirected to
+`/doula` rather than shown a roster she cannot act on. Writes stayed gated by `canManageTeam`
+throughout — this ticket is what the shell *offers*, not a new permission.
 
 Public profile + Book Consult: `/p/maya-chen`
 

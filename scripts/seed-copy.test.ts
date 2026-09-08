@@ -46,3 +46,20 @@ describe("seeded client copy", () => {
     expect(seed).not.toContain("non-clinical");
   });
 });
+
+describe("seeded roster (TOK-34 D8)", () => {
+  it("keeps a second doula whose role is not owner, so the doula shell is reachable", () => {
+    expect(seed).toContain("priya@novabirthpartners.com");
+    // The membership that makes her a `doula` rather than another owner is the whole
+    // point — without it there is nobody to sign in as and see the minimal shell.
+    expect(seed).toMatch(/userId: PRIYA_USER_ID,\n\s+role: "doula",/);
+  });
+
+  it("gives her a family, so 'Your families' is not only ever an empty state", () => {
+    expect(seed).toMatch(/userId: PRIYA_USER_ID,\n\s+role: "backup",/);
+  });
+
+  it("prints how to sign in as her when the seed finishes", () => {
+    expect(seed).toContain("priya@novabirthpartners.com / ${DEMO_PASSWORD}");
+  });
+});

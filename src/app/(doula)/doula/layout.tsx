@@ -4,55 +4,17 @@ import { auth } from "@/auth";
 import { getDb } from "@/db";
 import { organizations } from "@/db/schema";
 import { AppShell } from "@/components/brand/shell";
-import type { ShellNavGroup } from "@/components/brand/shell-nav";
 import { shellAttention } from "@/lib/queries";
+import {
+  shellNavGroups,
+  shellNavItems,
+  shellNewItems,
+  shellPersona,
+  shellSearchTargets,
+} from "@/lib/shell-persona";
 import { roleLabel } from "@/lib/team";
 
 export const dynamic = "force-dynamic";
-
-const nav = [
-  { href: "/doula", label: "Home" },
-  { href: "/doula/clients", label: "Clients" },
-  { href: "/doula/calendar", label: "Calendar" },
-  { href: "/doula/forms", label: "Forms" },
-  { href: "/doula/resources", label: "Resources" },
-  { href: "/doula/invoices", label: "Invoices" },
-  { href: "/doula/messages", label: "Messages" },
-  { href: "/doula/team", label: "Team" },
-  { href: "/doula/settings", label: "Settings" },
-  { href: "/doula/profile", label: "Profile" },
-];
-
-const navGroups: ShellNavGroup[] = [
-  {
-    label: "Practice",
-    items: [
-      { href: "/doula", label: "Home" },
-      { href: "/doula/clients", label: "Clients" },
-      { href: "/doula/calendar", label: "Calendar" },
-    ],
-  },
-  {
-    label: "Care library",
-    items: [
-      { href: "/doula/forms", label: "Forms" },
-      { href: "/doula/resources", label: "Resources" },
-    ],
-  },
-  {
-    label: "Money",
-    items: [{ href: "/doula/invoices", label: "Invoices" }],
-  },
-  {
-    label: "Workspace",
-    items: [
-      { href: "/doula/messages", label: "Messages" },
-      { href: "/doula/team", label: "Team" },
-      { href: "/doula/settings", label: "Settings" },
-      { href: "/doula/profile", label: "Profile" },
-    ],
-  },
-];
 
 export default async function DoulaLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -73,18 +35,25 @@ export default async function DoulaLayout({ children }: { children: React.ReactN
   const orgName = org?.name ?? "Practice";
   const personMeta = `${role} · ${orgName}`;
 
+  // TOK-34 D1: an owner/admin gets the agency shell — roster, brand, email templates,
+  // pipeline vocabulary. A member with role `doula` gets a shell scoped to her own
+  // practice, with no nav or search route into the agency surfaces she cannot act on.
+  const persona = shellPersona(session.user.membershipRole);
+
   return (
     <AppShell
       brand="Tokos"
       brandHint="Birth work, kept whole"
       personName={session.user.name ?? "Doula"}
       personMeta={personMeta}
-      nav={nav}
-      navGroups={navGroups}
+      nav={shellNavItems(persona, org?.name)}
+      navGroups={shellNavGroups(persona, org?.name)}
       tone="doula"
       notifyCount={attention.count}
       notifyItems={attention.items}
       newHref="/doula/clients"
+      newItems={shellNewItems(persona)}
+      searchTargets={shellSearchTargets(persona)}
     >
       {children}
     </AppShell>

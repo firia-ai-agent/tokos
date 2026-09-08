@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { organizations } from "@/db/schema";
+import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/tenancy";
 import { canManageTeam } from "@/lib/team";
 import { DEFAULT_PRIMARY_COLOR, TIMEZONES, contrastInk } from "@/lib/brand";
@@ -30,6 +31,10 @@ export default async function DoulaSettingsPage({
 }) {
   const query = await searchParams;
   const staff = await requireStaff();
+  // TOK-34 D1: this is agency chrome. It is out of the doula shell's nav and search, so
+  // a member with role `doula` who deep-links here is sent back to her own practice
+  // rather than shown brand settings she has no part in running.
+  if (!canManageTeam(staff.membershipRole)) redirect("/doula");
   const manages = canManageTeam(staff.membershipRole);
   const db = getDb();
   const [org] = await db

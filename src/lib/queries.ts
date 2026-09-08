@@ -388,6 +388,31 @@ export async function listOrgClients(organizationId: string, doulaUserId: string
 }
 
 /**
+ * The agency board (TOK-34 D7). `listOrgClients` is assignment-scoped, which is right
+ * for a doula and wrong for an owner: the assignment join silently hides every family
+ * nobody has been put on yet, so the one list an agency most needs — who is waiting for
+ * a doula — is the one it cannot render. This reads the whole org instead, and leaves
+ * the assignment join out entirely so a family appears exactly once whether she has no
+ * doula, one, or a primary plus a backup.
+ */
+export async function listAgencyClients(organizationId: string) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      client: clients,
+      stage: pipelineStages.stage,
+      fitConfirmedAt: pipelineStages.fitConfirmedAt,
+    })
+    .from(clients)
+    .leftJoin(pipelineStages, eq(pipelineStages.clientId, clients.id))
+    .where(eq(clients.organizationId, organizationId))
+    .orderBy(asc(clients.displayName));
+  // A client row without a pipeline row is a data accident, not a new stage — read it as
+  // the first stage rather than rendering an empty badge.
+  return rows.map((row) => ({ ...row, stage: row.stage ?? "new_lead" }));
+}
+
+/**
  * Everything `/doula/forms` renders: the org's templates, every assignment with its
  * template and family, and the latest submission per assignment so a complete form can
  * show what was answered. Reads are org-scoped; the answers never leave this process

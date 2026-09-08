@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { requireStaff } from "@/lib/tenancy";
 import { revenueHome } from "@/lib/queries";
 import { stageLabel } from "@/lib/pipeline";
+import { homeClientsEmpty, homeCtaLabel, shellPersona } from "@/lib/shell-persona";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,9 @@ function greetingFor(now = new Date()) {
 export default async function DoulaHomePage() {
   const staff = await requireStaff();
   const home = await revenueHome(staff.organizationId, staff.userId);
+  // TOK-34 D5: "lead" is agency vocabulary. To the doula who will be at the birth, the
+  // person who books a consult is a family from the first minute.
+  const persona = shellPersona(staff.membershipRole);
   const firstName = (staff.name ?? "there").split(/\s+/)[0];
   const todayLabel = format(new Date(), "EEEE, MMMM d");
   const maxBar = Math.max(...home.monthBars.map((bar) => bar.cents), 1);
@@ -39,7 +43,7 @@ export default async function DoulaHomePage() {
           href="/doula/clients"
           className="rounded-lg bg-coral px-3.5 py-2 text-[13px] font-semibold text-accent-foreground shadow-sm transition hover:bg-coral/90"
         >
-          Open clients
+          {homeCtaLabel(persona)}
         </Link>
       </header>
 
@@ -213,7 +217,7 @@ export default async function DoulaHomePage() {
         </div>
         {home.clients.length === 0 ? (
           <p className="rounded-xl bg-card px-4 py-8 text-center text-sm text-muted-foreground ring-1 ring-teal/15">
-            No assigned families yet. A Book Consult on your public profile creates a lead here.
+            {homeClientsEmpty(persona)}
           </p>
         ) : (
           <div className="grid gap-2">

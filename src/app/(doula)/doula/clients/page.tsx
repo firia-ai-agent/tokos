@@ -1,14 +1,27 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/tenancy";
-import { listOrgClients, orgMatches } from "@/lib/queries";
+import { listAgencyClients, listOrgClients, orgMatches } from "@/lib/queries";
 import { stageLabel } from "@/lib/pipeline";
+import {
+  agencyBoardSummary,
+  clientsEmpty,
+  clientsHeading,
+  clientsLegend,
+  shellPersona,
+} from "@/lib/shell-persona";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/brand/states";
 
 export default async function ClientsPage() {
   const staff = await requireStaff();
+  // TOK-34 D7: an owner/admin is looking at the practice, so the board is org-wide and
+  // includes families nobody is on yet. A doula is looking at her caseload, so the list
+  // stays assignment-scoped exactly as it was.
+  const persona = shellPersona(staff.membershipRole);
   const [rows, matches] = await Promise.all([
-    listOrgClients(staff.organizationId, staff.userId),
+    persona === "agency"
+      ? listAgencyClients(staff.organizationId)
+      : listOrgClients(staff.organizationId, staff.userId),
     orgMatches(staff.organizationId),
   ]);
   // Who is primary on each family, so the pipeline reads as an agency board and not just
@@ -16,21 +29,34 @@ export default async function ClientsPage() {
   const primaryOf = new Map(matches.map((row) => [row.clientId, row.primaryDoulaName]));
 
   if (rows.length === 0) {
-    return (
-      <EmptyState
-        title="Pipeline is empty"
-        body="Share your profile QR or send a Book Consult link."
-      />
-    );
+    const empty = clientsEmpty(persona);
+    return <EmptyState title={empty.title} body={empty.body} />;
   }
+
+  // Families waiting on a primary are the agency's actual queue, so they sort to the top
+  // of the board. Array#sort is stable, so everyone else keeps the name order the query
+  // returned. A doula's list is hers alone and is left in query order.
+  const ordered =
+    persona === "agency"
+      ? [...rows].sort(
+          (a, b) =>
+            Number(Boolean(primaryOf.get(a.client.id))) -
+            Number(Boolean(primaryOf.get(b.client.id))),
+        )
+      : rows;
+  const unassigned = rows.filter((row) => !primaryOf.get(row.client.id)).length;
+
   return (
     <div className="space-y-4">
-      <h2 className="font-heading text-2xl text-teal-ink">Pipeline</h2>
-      <p className="text-sm text-muted-foreground">
-        new lead → intro → fit → agreement signed (intent) → complete (fit + payment) → active care
-      </p>
+      <h2 className="font-heading text-2xl text-teal-ink">{clientsHeading(persona)}</h2>
+      <p className="text-sm text-muted-foreground">{clientsLegend(persona)}</p>
+      {persona === "agency" ? (
+        <p className="text-[13px] font-medium text-teal">
+          {agencyBoardSummary(rows.length, unassigned)}
+        </p>
+      ) : null}
       <div className="grid gap-3">
-        {rows.map(({ client, stage, fitConfirmedAt }) => {
+        {ordered.map(({ client, stage, fitConfirmedAt }) => {
           const primary = primaryOf.get(client.id);
           return (
             <Link

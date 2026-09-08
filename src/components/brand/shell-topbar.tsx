@@ -21,6 +21,9 @@ export type ShellNotifyItem = {
   href: string;
 };
 
+/** One entry in the staff "New" menu. Built per persona in `@/lib/shell-persona`. */
+export type ShellNewItem = { label: string; href: string };
+
 export function ShellTopBar({
   personName,
   personMeta,
@@ -28,6 +31,7 @@ export function ShellTopBar({
   notifyCount = 0,
   notifyItems = [],
   newHref,
+  newItems,
   searchTargets,
 }: {
   personName?: string;
@@ -35,8 +39,13 @@ export function ShellTopBar({
   tone?: "doula" | "client";
   notifyCount?: number;
   notifyItems?: ShellNotifyItem[];
-  /** Primary New destination (intake / pipeline). */
+  /** Primary New destination (intake / pipeline), and the fallback the menu opens with. */
   newHref: string;
+  /**
+   * Staff New menu. An agency owner opens a pipeline; an assigned doula opens her
+   * clients and starts a family from her Book Consult link (TOK-34 D4).
+   */
+  newItems?: ShellNewItem[];
   searchTargets: { label: string; href: string; keywords: string }[];
 }) {
   const router = useRouter();
@@ -62,6 +71,8 @@ export function ShellTopBar({
     tone === "doula" ? "Search clients, calendar, invoices…" : "Search forms, resources, messages…";
 
   const newLabel = tone === "doula" ? "New" : "Open";
+  const menuItems: ShellNewItem[] =
+    newItems && newItems.length > 0 ? newItems : [{ label: "Open pipeline", href: newHref }];
 
   function onSearchSubmit(event: FormEvent) {
     event.preventDefault();
@@ -137,21 +148,11 @@ export function ShellTopBar({
             <DropdownMenuLabel className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
               Create / intake
             </DropdownMenuLabel>
-            <DropdownMenuItem asChild>
-              <Link href={newHref}>Open pipeline</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/doula/forms">Form · template or assign</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/doula/resources">Resource · write or share</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/doula/profile">Public profile · Book Consult</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/doula/calendar">Calendar · availability</Link>
-            </DropdownMenuItem>
+            {menuItems.map((item) => (
+              <DropdownMenuItem key={`${item.href}-${item.label}`} asChild>
+                <Link href={item.href}>{item.label}</Link>
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (

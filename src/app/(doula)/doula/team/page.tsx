@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { format } from "date-fns";
+import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/tenancy";
 import { orgMatches, orgStaffInvites, teamRoster } from "@/lib/queries";
 import { stageLabel } from "@/lib/pipeline";
@@ -48,6 +49,10 @@ export default async function DoulaTeamPage({
 }) {
   const query = await searchParams;
   const staff = await requireStaff();
+  // TOK-34 D1: this is agency chrome. It is out of the doula shell's nav and search, so
+  // a member with role `doula` who deep-links here is sent back to her own practice
+  // rather than shown a roster she has no part in running.
+  if (!canManageTeam(staff.membershipRole)) redirect("/doula");
   const manages = canManageTeam(staff.membershipRole);
   const [roster, invites, matches] = await Promise.all([
     teamRoster(staff.organizationId),

@@ -2,9 +2,11 @@ import Link from "next/link";
 import { logoutAction } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { isDemoMode } from "@/lib/env";
+import { shellSearchTargets } from "@/lib/shell-persona";
 import { ShellNav, type ShellNavGroup, type ShellNavItem } from "@/components/brand/shell-nav";
 import {
   ShellTopBar,
+  type ShellNewItem,
   type ShellNotifyItem,
 } from "@/components/brand/shell-topbar";
 
@@ -29,6 +31,7 @@ export function AppShell({
   notifyCount = 0,
   notifyItems = [],
   newHref,
+  newItems,
   searchTargets,
 }: {
   brand?: string;
@@ -42,6 +45,7 @@ export function AppShell({
   notifyCount?: number;
   notifyItems?: ShellNotifyItem[];
   newHref?: string;
+  newItems?: ShellNewItem[];
   searchTargets?: { label: string; href: string; keywords: string }[];
 }) {
   const initials = (personName ?? "T")
@@ -53,22 +57,12 @@ export function AppShell({
 
   const resolvedNewHref =
     newHref ?? (tone === "doula" ? "/doula/clients" : "/portal/forms");
+  // The staff shell builds its own targets per persona (TOK-34 D6) and passes them in;
+  // a doula must not be able to search her way to Team or Brand settings.
   const resolvedSearch =
     searchTargets ??
     (tone === "doula"
-      ? [
-          { label: "Home", href: "/doula", keywords: "home review revenue" },
-          { label: "Clients / pipeline", href: "/doula/clients", keywords: "clients pipeline intake lead family" },
-          { label: "Calendar", href: "/doula/calendar", keywords: "calendar availability schedule consult" },
-          { label: "Forms", href: "/doula/forms", keywords: "forms templates assign intake co-complete questions" },
-          { label: "Resources", href: "/doula/resources", keywords: "resources handouts library share education" },
-          { label: "Invoices", href: "/doula/invoices", keywords: "invoices money pay billing" },
-          { label: "Messages", href: "/doula/messages", keywords: "messages inbox" },
-          { label: "Team", href: "/doula/team", keywords: "team roster invite doula staff match primary agency" },
-          { label: "Settings · brand", href: "/doula/settings", keywords: "settings brand portal name color footer timezone on-call" },
-          { label: "Settings · email", href: "/doula/settings/email", keywords: "email templates transactional subject trigger" },
-          { label: "Profile", href: "/doula/profile", keywords: "profile book consult public" },
-        ]
+      ? shellSearchTargets("doula")
       : [
           { label: "Home", href: "/portal", keywords: "home checklist" },
           { label: "Forms", href: "/portal/forms", keywords: "forms questions preferences" },
@@ -166,6 +160,7 @@ export function AppShell({
             notifyCount={notifyCount}
             notifyItems={notifyItems}
             newHref={resolvedNewHref}
+            newItems={newItems}
             searchTargets={resolvedSearch}
           />
 

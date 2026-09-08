@@ -409,14 +409,28 @@ async function main() {
       reason: "seed",
     },
   ]);
-  await db.insert(assignments).values({
-    id: "99999999-9999-4999-8999-999999999990",
-    organizationId: ORG_ID,
-    clientId: AVERY_CLIENT_ID,
-    userId: DOULA_ID,
-    role: "primary",
-    status: "active",
-  });
+  // Avery is Maya's, with Priya backing her up. The second row is what makes the two
+  // shells provable side by side (TOK-34): Priya signs in to a doula shell with one
+  // family on it, while Maya's owner board is org-wide and still shows Avery as the
+  // family nobody has been named primary on.
+  await db.insert(assignments).values([
+    {
+      id: "99999999-9999-4999-8999-999999999990",
+      organizationId: ORG_ID,
+      clientId: AVERY_CLIENT_ID,
+      userId: DOULA_ID,
+      role: "primary",
+      status: "active",
+    },
+    {
+      id: "99999999-9999-4999-8999-999999999991",
+      organizationId: ORG_ID,
+      clientId: AVERY_CLIENT_ID,
+      userId: PRIYA_USER_ID,
+      role: "backup",
+      status: "active",
+    },
+  ]);
   await db.insert(clientPortalAccess).values({
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab",
     organizationId: ORG_ID,
@@ -794,6 +808,10 @@ async function main() {
   console.log(`Seeded NOVA Birth Partners + Cedar tenant.
   Doula:   maya@novabirthpartners.com / ${DEMO_PASSWORD} (owner)
   Doula:   priya@novabirthpartners.com / ${DEMO_PASSWORD} (accepted second doula — TOK-41)
+           role=doula, so she gets the minimal doula shell (TOK-34): no Team, no Brand,
+           no Email templates in nav or search; "Your families" instead of "Pipeline";
+           backup on Avery, so her list has exactly one family while Maya's owner board
+           is org-wide
   Client:  jordan.rivera@example.com / ${DEMO_PASSWORD}
   Client:  avery.kim@example.com / ${DEMO_PASSWORD}
   Cedar staff: sam@cedarbirth.co / ${DEMO_PASSWORD} (owner of Cedar — must not reach NOVA clients)
