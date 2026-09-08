@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import {
   clients,
   contracts,
+  engagements,
   formAssignments,
   formSubmissions,
   formTemplates,
@@ -17,7 +18,9 @@ import {
 import { requireStaff } from "@/lib/tenancy";
 import { allowedDoulaActions } from "@/lib/pipeline";
 import { getFunnelFlags } from "@/lib/funnel";
-import { stageLabel } from "@/lib/queries";
+import { stageLabel, teamRoster } from "@/lib/queries";
+import { canManageTeam, roleLabel } from "@/lib/team";
+import { assignPrimaryDoulaAction } from "@/app/actions/team";
 import { unreadFor } from "@/lib/messages";
 import { formatCents } from "@/lib/money";
 import {
@@ -55,6 +58,17 @@ export default async function ClientDetailPage({
 
   const funnel = await getFunnelFlags(staff.organizationId, client.id);
   const actions = allowedDoulaActions(funnel.stage, funnel.flags);
+  // The engagement carries the match. Read org-scoped, like everything else on this page.
+  const [engagement] = await db
+    .select({ id: engagements.id, primaryDoulaUserId: engagements.primaryDoulaUserId })
+    .from(engagements)
+    .where(
+      and(eq(engagements.organizationId, staff.organizationId), eq(engagements.clientId, client.id)),
+    )
+    .limit(1);
+  const roster = await teamRoster(staff.organizationId);
+  const manages = canManageTeam(staff.membershipRole);
+  const primary = roster.find((member) => member.userId === engagement?.primaryDoulaUserId);
   const events = await db
     .select()
     .from(pipelineEvents)
@@ -140,6 +154,61 @@ export default async function ClientDetailPage({
         </div>
         <Badge className="text-sm">{stageLabel(funnel.stage)}</Badge>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle>Care team</CardTitle>
+          <Link
+            href="/doula/team"
+            className="text-[12.5px] font-semibold text-coral hover:underline"
+          >
+            Roster →
+          </Link>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Primary doula:{" "}
+            {primary ? (
+              <span className="font-semibold text-teal-ink">
+                {primary.name}
+                {primary.credentialsLabel ? ` · ${primary.credentialsLabel}` : ""} ·{" "}
+                {roleLabel(primary.role)}
+              </span>
+            ) : (
+              <span className="font-semibold text-coral">not matched yet</span>
+            )}
+          </p>
+          {manages ? (
+            <form action={assignPrimaryDoulaAction} className="flex flex-wrap items-center gap-2">
+              <input type="hidden" name="clientId" value={client.id} />
+              <input type="hidden" name="returnTo" value="client" />
+              <label className="sr-only" htmlFor="primaryDoula">
+                Primary doula
+              </label>
+              <select
+                id="primaryDoula"
+                name="doulaUserId"
+                defaultValue={engagement?.primaryDoulaUserId ?? ""}
+                className="h-9 w-[15rem] rounded-md border border-teal/20 bg-card px-2.5 text-[13px] text-teal-ink focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/25"
+              >
+                <option value="">No primary</option>
+                {roster.map((member) => (
+                  <option key={member.userId} value={member.userId}>
+                    {member.name} · {roleLabel(member.role)}
+                  </option>
+                ))}
+              </select>
+              <Button type="submit" size="sm" variant="outline">
+                Set primary
+              </Button>
+            </form>
+          ) : (
+            <p className="text-[12.5px] text-muted-foreground">
+              Your founder or an admin changes the match.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -12,6 +12,7 @@ import {
   emailTemplateVersions,
   formAssignments,
   formTemplates,
+  invites,
   memberships,
   organizations,
   pipelineEvents,
@@ -40,6 +41,8 @@ const CEDAR_PRIMARY = "#5C4A3A";
 
 /** Checked-in headshots; provenance and license live in `public/seed/ATTRIBUTION.md`. */
 const SEED_PHOTO_DIR = join(process.cwd(), "public", "seed");
+
+const daysFromNow = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
 /**
  * Gives a seeded provider a photo through the real upload path, so a seeded photo and an
@@ -132,6 +135,20 @@ async function main() {
     organizationId: ORG_ID,
     userId: DOULA_ID,
     role: "owner",
+  });
+
+  // Maya stays NOVA's only owner. One live staff invite sits on `/doula/team` so the
+  // roster has something pending out of the box — accepting it at `/invite/<token>`
+  // creates the membership through the same path the invite form uses.
+  await db.insert(invites).values({
+    id: "77777777-7777-4777-8777-777777777771",
+    organizationId: ORG_ID,
+    email: "alex@novabirthpartners.com",
+    role: "doula",
+    token: "nova-demo-staff-invite",
+    kind: "staff",
+    expiresAt: daysFromNow(7),
+    invitedByUserId: DOULA_ID,
   });
 
   await db.insert(providerProfiles).values({
@@ -505,8 +522,8 @@ async function main() {
     {
       triggerKey: "doula_invited",
       name: "Doula invited",
-      subject: "You are invited to Tokos",
-      text: "You have been invited to the NOVA workspace. Sign in at {{portal_url}}",
+      subject: "You are invited to join {{org_name}} on Tokos",
+      text: "You have been invited to {{org_name}} as {{invite_role}}. Accept here: {{invite_url}}",
     },
     {
       triggerKey: "form_reminder",

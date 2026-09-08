@@ -6,14 +6,20 @@ import {
   calendarEvents,
   clients,
   contracts,
+  emailTemplateVersions,
+  emailTemplates,
+  engagements,
   formAssignments,
   formSubmissions,
   formTemplates,
+  invites,
   invoices,
+  memberships,
   pipelineStages,
   portalMessages,
   resourceShares,
   resources,
+  users,
 } from "@/db/schema";
 import { formatCents } from "@/lib/money";
 import { STAGE_LABELS, type PipelineStageName } from "@/lib/pipeline";
@@ -531,4 +537,101 @@ export async function shellAttention(organizationId: string, doulaUserId: string
     .slice(0, 5);
 
   return { count: unique.length, items: unique };
+}
+
+/**
+ * The agency roster: every membership in the org with the person behind it, founders
+ * first, plus how many families each doula is primary on. Org-scoped by the join, so a
+ * roster never reaches across tenants.
+ */
+export async function teamRoster(organizationId: string) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      membershipId: memberships.id,
+      role: memberships.role,
+      joinedAt: memberships.createdAt,
+      userId: users.id,
+      name: users.name,
+      email: users.email,
+      credentialsLabel: users.credentialsLabel,
+    })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(eq(memberships.organizationId, organizationId))
+    .orderBy(asc(memberships.createdAt));
+
+  const matched = await db
+    .select({ userId: engagements.primaryDoulaUserId, n: count() })
+    .from(engagements)
+    .where(eq(engagements.organizationId, organizationId))
+    .groupBy(engagements.primaryDoulaUserId);
+  const matchCount = new Map(
+    matched.filter((row) => row.userId).map((row) => [row.userId as string, Number(row.n ?? 0)]),
+  );
+
+  const rank: Record<string, number> = { owner: 0, admin: 1, doula: 2 };
+  return rows
+    .map((row) => ({ ...row, primaryClients: matchCount.get(row.userId) ?? 0 }))
+    .sort((a, b) => (rank[a.role] ?? 3) - (rank[b.role] ?? 3) || a.name.localeCompare(b.name));
+}
+
+/** Staff invites for this org, newest first. Client portal invites are not roster rows. */
+export async function orgStaffInvites(organizationId: string) {
+  const db = getDb();
+  return db
+    .select()
+    .from(invites)
+    .where(and(eq(invites.organizationId, organizationId), eq(invites.kind, "staff")))
+    .orderBy(desc(invites.createdAt));
+}
+
+/**
+ * Who is primary on each family in the org, for the roster's match panel and the client
+ * list. Left joins keep families without an engagement — the ones still to be matched.
+ */
+export async function orgMatches(organizationId: string) {
+  const db = getDb();
+  return db
+    .select({
+      clientId: clients.id,
+      clientName: clients.displayName,
+      stage: pipelineStages.stage,
+      engagementId: engagements.id,
+      primaryDoulaUserId: engagements.primaryDoulaUserId,
+      primaryDoulaName: users.name,
+    })
+    .from(clients)
+    .leftJoin(pipelineStages, eq(pipelineStages.clientId, clients.id))
+    .leftJoin(engagements, eq(engagements.clientId, clients.id))
+    .leftJoin(users, eq(users.id, engagements.primaryDoulaUserId))
+    .where(eq(clients.organizationId, organizationId))
+    .orderBy(asc(clients.displayName));
+}
+
+/** The org's transactional templates, in the order the editor lists them. */
+export async function orgEmailTemplates(organizationId: string) {
+  const db = getDb();
+  const templates = await db
+    .select()
+    .from(emailTemplates)
+    .where(eq(emailTemplates.organizationId, organizationId))
+    .orderBy(asc(emailTemplates.name));
+
+  if (templates.length === 0) return templates.map((template) => ({ ...template, version: 1 }));
+
+  const versions = await db
+    .select({ templateId: emailTemplateVersions.templateId, version: emailTemplateVersions.version })
+    .from(emailTemplateVersions)
+    .where(
+      inArray(
+        emailTemplateVersions.templateId,
+        templates.map((template) => template.id),
+      ),
+    );
+  const latest = new Map<string, number>();
+  for (const row of versions) {
+    latest.set(row.templateId, Math.max(latest.get(row.templateId) ?? 0, Number(row.version ?? 0)));
+  }
+  return templates.map((template) => ({ ...template, version: latest.get(template.id) ?? 1 }));
 }

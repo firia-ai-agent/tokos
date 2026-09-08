@@ -6,6 +6,7 @@ import { organizations } from "@/db/schema";
 import { AppShell } from "@/components/brand/shell";
 import type { ShellNavGroup } from "@/components/brand/shell-nav";
 import { shellAttention } from "@/lib/queries";
+import { roleLabel } from "@/lib/team";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,8 @@ const nav = [
   { href: "/doula/resources", label: "Resources" },
   { href: "/doula/invoices", label: "Invoices" },
   { href: "/doula/messages", label: "Messages" },
+  { href: "/doula/team", label: "Team" },
+  { href: "/doula/settings", label: "Settings" },
   { href: "/doula/profile", label: "Profile" },
 ];
 
@@ -44,16 +47,12 @@ const navGroups: ShellNavGroup[] = [
     label: "Workspace",
     items: [
       { href: "/doula/messages", label: "Messages" },
+      { href: "/doula/team", label: "Team" },
+      { href: "/doula/settings", label: "Settings" },
       { href: "/doula/profile", label: "Profile" },
     ],
   },
 ];
-
-function roleLabel(role?: string | null) {
-  if (role === "owner") return "Founder";
-  if (role === "admin") return "Admin";
-  return "Doula";
-}
 
 export default async function DoulaLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();

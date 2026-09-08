@@ -119,6 +119,43 @@ sign-in email, phone, estimated due date), **Address** (including line 2), and
 portal, with a saved banner after the redirect. An emptied EDD writes `NULL`, not `""`.
 Health detail belongs on forms, not here.
 
+**Agency roster, brand, and email templates (TOK-29):** `/doula/team` is the agency
+surface. **Roster** lists every membership with the person's credentials, the role
+(Founder / Admin / Doula), and how many families they are primary on. **Invite a doula**
+takes a work email and a role — `doula` or `admin` only, because ownership is not handed
+out by email — writes an `invites` row with a CSPRNG token that expires in 7 days, and
+queues the `doula_invited` template with an absolute `/invite/<token>` accept link. The
+existing public accept page turns that into a membership. **Invites waiting** shows the
+live ones with their accept URL (handy without Resend keys) and a **Withdraw** button.
+
+**Match** names the primary doula on each family's `engagements` row, creating the
+engagement when a family does not have one. It is additive: the newly matched doula picks
+the family up on their own Clients list, and whoever was already carrying them keeps their
+assignment. The same control sits on the client record under **Care team**, and the
+pipeline card now reads "Primary: Maya Chen" or "No primary yet". Owner/admin only —
+`canAssignPrimaryDoula` re-derives the actor's org, the client's org, **and** the
+membership org of the doula being named before anything is written, so a Cedar user id
+posted into NOVA is refused rather than saved.
+
+`/doula/settings` edits the practice brand: portal name, primary colour (with a live
+preview chip and a colour picker), website, on-call phone, confidentiality note, email
+footer, and timezone. Everything goes through `sanitizeBrand` on the way in — a bad hex
+falls back to the current colour instead of reaching an inline style, a `javascript:`
+website reads back as null, and the footer HTML is narrowed to inline formatting with
+script blocks and `on*=` handlers removed. Families see the portal name and the
+confidentiality / on-call strip at `/portal` on their next load.
+
+`/doula/settings/email` is the EmailTemplate editor. Each of the six triggers can be
+enabled or disabled and have its from name, reply-to, subject, plain text, and HTML
+edited, with a preview panel that renders the current draft against invented sample
+values. Saving updates the live template **and** appends an `email_template_versions` row
+at `max(version) + 1` — wording changes publish a version, a toggle or a reply-to change
+alone does not. The variable allowlist is the firewall here: a template may only mention
+what its trigger actually supplies, so `{{answer_1}}` — or `{{sign_url}}` on a form
+reminder — is refused on save with the offending names named. Seeded templates stay
+editable; the editor is org-scoped, so a template id from another tenant reads back as
+nothing.
+
 **PHI firewall (TOK-27):** a question marked `| sensitive` — or worded as health, notes,
 history, or medication — gets a coral **Sensitive** badge everywhere it appears and never
 leaves the portal. Form emails carry three vars only: `client_name`, `portal_url`,
@@ -167,6 +204,27 @@ Maya's own notes on the right. `/portal/profile` → add an apartment line and a
 due date → **Save profile** → the page comes back with **Profile saved**, and the values
 are still there on reload.
 
+**Roster, brand, and templates (Veri):** as Maya (Founder), `/doula/team` shows her on the
+roster and one **pending** invite for `alex@novabirthpartners.com`. Invite
+`someone@novabirthpartners.com` as **Doula** — it lands in **Invites waiting** with an
+expiry ~7 days out and an accept link, and an `outbox_messages` row appears for the
+`doula_invited` trigger carrying that link. Inviting the same address again says "already
+a live invite"; inviting `maya@novabirthpartners.com` says she is already here. Under
+**Match · primary doula**, set Jordan's primary to Maya → the row reads "Primary: Maya
+Chen", and so does her card on `/doula/clients` and **Care team** on her record.
+
+`/doula/settings` → change the portal name and set the colour to `#8A3B2F` → **Save
+brand** → the banner says saved and both values are still there on reload, with the
+preview chip and the portal header swatch in the new colour. Type `notahex` and save: the
+colour falls back to what it was. Sign in as Jordan — `/portal` carries the new practice
+name and the confidentiality / on-call strip.
+
+`/doula/settings/email` → open **Form reminder** → put `{{answer_1}}` in the subject and
+save: it is refused, naming `answer_1`, and nothing is written. Edit the subject properly
+and save: the banner says a new version was published and the badge reads **v2**. Toggle
+**Enabled** off and save again — the version stays **v2**, because a toggle is not
+wording.
+
 **Tenancy probe:** as Maya, `/doula/clients/44444444-4444-4444-8444-444444444446` (Riley / Cedar) must 404. As Jordan, Avery's contract/invoice/stub URLs must not complete or leak. Form and resource writes are org-scoped the same way: a template, assignment, resource, or share id posted from another tenant reads back as nothing.
 
 Without Stripe / Dropbox Sign / Resend / S3 keys, adapters run in **stub mode**. PHI (visit notes, health detail) is never written to email bodies, Stripe metadata, or e-sign custom fields.
@@ -189,7 +247,7 @@ npm run test
 npm run smoke   # mutates the seeded client through the funnel; re-run db:seed after
 ```
 
-Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, tenant ownership guards, the form PHI firewall (sensitive-field detection, template parsing, and the guard that refuses to let an answer into an email), and the TOK-28 portal helpers: thread ordering, day grouping, timestamps, per-viewer unread counts, doula inbox thread rollup (`src/lib/messages.test.ts`), and the Home checklist labels and coral/Teal-Ink tones (`src/lib/checklist.test.ts`).
+Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, tenant ownership guards, the form PHI firewall (sensitive-field detection, template parsing, and the guard that refuses to let an answer into an email), the TOK-28 portal helpers: thread ordering, day grouping, timestamps, per-viewer unread counts, doula inbox thread rollup (`src/lib/messages.test.ts`), and the Home checklist labels and coral/Teal-Ink tones (`src/lib/checklist.test.ts`), and the TOK-29 agency helpers: invite token shape and uniqueness, expiry, pending/expired/accepted status, the invite and match guards including the cross-tenant refusals (`src/lib/team.test.ts`), brand sanitising for hex / URL / phone / footer HTML (`src/lib/brand.test.ts`), and the template variable allowlist and version bump (`src/lib/email-templates.test.ts`).
 
 ## Built vs deferred
 
@@ -199,6 +257,10 @@ Covers the pipeline state machine, the complete rule (signed ≠ complete; no si
 - Drizzle P1 schema + multi-tenant `organization_id`
 - Auth.js credentials: Membership for staff, ClientPortalAccess for families
 - Revenue-first doula Home, enforced funnel, send contract, invoices
+- Agency roster: staff invite with expiring token, pending list, withdraw (TOK-29)
+- Primary-doula match on the engagement, from Team or the client record (TOK-29)
+- Org brand editor: portal name, colour, website, on-call, footer, timezone (TOK-29)
+- Full EmailTemplate editor: enable, wording, preview, append-only versions (TOK-29)
 - Client portal checklist with labelled counts, sign, pay, forms, resources (TOK-28)
 - Two-way portal messaging: shared thread UI, read receipts, doula inbox by family (TOK-28)
 - Client-editable profile: contact, address (incl. line 2), EDD, alternate (TOK-28)
@@ -212,9 +274,9 @@ Covers the pipeline state machine, the complete rule (signed ≠ complete; no si
 
 **Deferred (later slices / TOK-7)**
 
-- Full EmailTemplate editor polish and branded preview
 - Embedded e-sign
-- Agency roster / match UI
+- Logo upload and per-org custom domain
+- Capacity-aware / suggested matching
 - SMS / HIPAA messaging
 - AI (TOK-7)
 - Claims / Medicaid

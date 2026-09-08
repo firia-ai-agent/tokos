@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { clientPortalAccess, clients, memberships } from "@/db/schema";
 import { auth } from "@/auth";
 import { clientOwnsRow, staffOwnsClient } from "@/lib/ownership";
+import { canManageTeam } from "@/lib/team";
 
 export type StaffSession = {
   actorType: "staff";
@@ -56,6 +57,17 @@ export async function requireStaff() {
   const session = await requireSession();
   if (session.actorType !== "staff") throw new Error("Forbidden");
   return session;
+}
+
+/**
+ * Roster, brand, and email-template writes are owner/admin work. Server actions are
+ * reachable by direct POST, so the role is re-checked here rather than trusted from
+ * whichever page happened to render the form.
+ */
+export async function requireStaffManager() {
+  const staff = await requireStaff();
+  if (!canManageTeam(staff.membershipRole)) throw new Error("Forbidden");
+  return staff;
 }
 
 export async function requireClient() {

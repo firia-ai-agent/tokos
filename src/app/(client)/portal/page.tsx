@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { format } from "date-fns";
+import { eq } from "drizzle-orm";
+import { getDb } from "@/db";
+import { organizations } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { clientChecklist, stageLabel } from "@/lib/queries";
 import { checklistCards, checklistSummary, openTaskCount } from "@/lib/checklist";
@@ -17,6 +20,19 @@ export default async function PortalHomePage({
   const checklist = await clientChecklist(session.organizationId, session.clientId);
   const funnel = await getFunnelFlags(session.organizationId, session.clientId);
   const firstName = (session.name ?? "there").split(/\s+/)[0];
+  // The practice's own brand, edited at /doula/settings — never a hardcoded tenant name.
+  const db = getDb();
+  const [org] = await db
+    .select({
+      portalName: organizations.portalName,
+      name: organizations.name,
+      onCallPhone: organizations.onCallPhone,
+      confidentialityBlurb: organizations.confidentialityBlurb,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, session.organizationId))
+    .limit(1);
+  const practice = org?.portalName ?? org?.name ?? "Your birth team";
 
   const cards = checklistCards(checklist);
   const open = openTaskCount(checklist);
@@ -37,7 +53,7 @@ export default async function PortalHomePage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal">
-            NOVA Birth Prep
+            {practice}
           </p>
           <h1 className="mt-1 font-heading text-[28px] font-semibold tracking-[-0.02em] text-teal-ink sm:text-[32px]">
             Welcome, {firstName}
@@ -113,6 +129,21 @@ export default async function PortalHomePage({
           </Link>
         ))}
       </section>
+
+      {org?.confidentialityBlurb || org?.onCallPhone ? (
+        <section className="rounded-xl bg-card px-5 py-4 ring-1 ring-teal/15">
+          {org.confidentialityBlurb ? (
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              {org.confidentialityBlurb}
+            </p>
+          ) : null}
+          {org.onCallPhone ? (
+            <p className="mt-2 text-[13px] text-teal-ink">
+              <span className="font-semibold">On call</span> · {org.onCallPhone}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }

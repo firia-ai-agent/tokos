@@ -64,6 +64,9 @@ export function AppShell({
           { label: "Resources", href: "/doula/resources", keywords: "resources handouts library share education" },
           { label: "Invoices", href: "/doula/invoices", keywords: "invoices money pay billing" },
           { label: "Messages", href: "/doula/messages", keywords: "messages inbox" },
+          { label: "Team", href: "/doula/team", keywords: "team roster invite doula staff match primary agency" },
+          { label: "Settings · brand", href: "/doula/settings", keywords: "settings brand portal name color footer timezone on-call" },
+          { label: "Settings · email", href: "/doula/settings/email", keywords: "email templates transactional subject trigger" },
           { label: "Profile", href: "/doula/profile", keywords: "profile book consult public" },
         ]
       : [
