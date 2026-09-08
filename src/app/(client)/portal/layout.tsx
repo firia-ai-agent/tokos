@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getDb } from "@/db";
 import { organizations } from "@/db/schema";
+import { clientChrome } from "@/lib/client-brand";
 import { AppShell } from "@/components/brand/shell";
 import type { ShellNavGroup } from "@/components/brand/shell-nav";
 
@@ -54,14 +55,16 @@ export default async function ClientLayout({ children }: { children: React.React
     .where(eq(organizations.id, session.user.organizationId ?? ""))
     .limit(1);
 
-  const portalLabel = org?.portalName ?? org?.name ?? "NOVA Birth Prep";
+  // The client rail leads with the practice, not the product (TOK-39 E4). "Tokos" is
+  // the staff shells' word; a family bought NOVA.
+  const chrome = clientChrome(org?.portalName, org?.name);
 
   return (
     <AppShell
-      brand="Tokos"
-      brandHint={portalLabel}
+      brand={chrome.brand}
+      brandHint={chrome.hint}
       personName={session.user.name ?? "Client"}
-      personMeta={`Client · ${portalLabel}`}
+      personMeta={`Client · ${chrome.portalName}`}
       nav={nav}
       navGroups={navGroups}
       tone="client"

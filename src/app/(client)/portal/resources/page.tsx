@@ -1,9 +1,12 @@
+import Link from "next/link";
 import { format } from "date-fns";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { resources, resourceShares } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
+import { clientAgreementStatuses } from "@/lib/queries";
+import { resourceGate } from "@/lib/resource-gate";
 import { markResourceDoneAction } from "@/app/actions/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +18,41 @@ export default async function ResourcesPage() {
     organizationId: session.organizationId,
     clientId: session.clientId,
   });
+
+  // The gate comes before the read: nothing about a locked family's handouts — not a
+  // title, not a count — should reach the page (TOK-39 E2).
+  const gate = resourceGate({
+    ...(await clientAgreementStatuses(session.organizationId, session.clientId)),
+    doulaName: doula.name,
+    doulaFirstName: doula.firstName,
+  });
+
+  if (gate.locked) {
+    return (
+      <div className="space-y-6">
+        <header>
+          <h1 className="font-heading text-[28px] font-semibold tracking-[-0.02em] text-teal-ink">
+            Resources
+          </h1>
+        </header>
+        <section className="rounded-xl bg-card px-5 py-10 text-center ring-1 ring-teal/15">
+          <h2 className="font-heading text-xl text-teal-ink">{gate.title}</h2>
+          <p className="mx-auto mt-2 max-w-md text-[14px] leading-relaxed text-muted-foreground">
+            {gate.body}
+          </p>
+          <p className="mx-auto mt-1.5 max-w-md text-[13px] text-muted-foreground">
+            {gate.hint}
+          </p>
+          {gate.next ? (
+            <Button asChild size="sm" className="mt-5">
+              <Link href={gate.next.href}>{gate.next.label}</Link>
+            </Button>
+          ) : null}
+        </section>
+      </div>
+    );
+  }
+
   const db = getDb();
   const rows = await db
     .select({ share: resourceShares, resource: resources })

@@ -28,6 +28,8 @@ export type ChecklistCard = {
   /** True when this card is a chore the family still owes. */
   actionable: boolean;
   tone: "coral" | "ink";
+  /** Resources before the agreement is signed and paid (TOK-39 E2). */
+  locked?: boolean;
 };
 
 type CardSpec = {
@@ -109,9 +111,27 @@ const CARDS: readonly CardSpec[] = [
 export function checklistCards(
   counts: ChecklistCounts,
   doulaName = "your care team",
+  options: { resourcesLocked?: boolean } = {},
 ): ChecklistCard[] {
   return CARDS.map((spec) => {
     const count = counts[spec.key] ?? 0;
+
+    // A locked shelf must not tease its contents. The card says when it opens and
+    // shows no number, because "3 new" the family cannot read is worse than silence.
+    if (spec.key === "openResources" && options.resourcesLocked) {
+      return {
+        key: spec.key,
+        href: spec.href,
+        label: spec.label,
+        detail: `Handouts ${doulaName} shares once your agreement is signed and paid`,
+        count: 0,
+        countLabel: "Opens after signing",
+        actionable: false,
+        tone: "ink" as const,
+        locked: true,
+      };
+    }
+
     return {
       key: spec.key,
       href: spec.href,

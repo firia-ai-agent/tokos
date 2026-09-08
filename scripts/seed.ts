@@ -117,7 +117,10 @@ async function main() {
     name: "NOVA Birth Partners",
     slug: "nova-birth-partners",
     timezone: "America/New_York",
-    portalName: "NOVA Birth Partners",
+    // The practice is "NOVA Birth Partners"; the thing a family logs into is Birth Prep
+    // (TOK-39 E4), matching the Dubsado portal NOVA is leaving. `name` stays the legal
+    // entity — only the client-facing word changes.
+    portalName: "NOVA Birth Prep",
     primaryColor: NOVA_PRIMARY,
     websiteUrl: "https://novabirthpartners.com",
     onCallPhone: "(703) 555-0148",
@@ -606,6 +609,10 @@ async function main() {
       tags: ["comfort", "labor", "partner"],
     },
   ]);
+  // Both seeded families sit behind the resource gate (TOK-39 E2): Jordan's agreement is
+  // `sent` with an open deposit, Avery has no agreement at all. That is the demo, not a
+  // hole in it — sign Jordan's agreement and clear the stub payment at /stub/pay and the
+  // handouts below open live, which is the whole rule in two clicks.
   await db.insert(resourceShares).values([
     {
       id: "13131313-1313-4131-8131-131313131313",
@@ -742,7 +749,7 @@ async function main() {
     name: "Cedar Birth Collective",
     slug: "cedar-birth-collective",
     timezone: "America/New_York",
-    portalName: "Cedar Birth Collective",
+    portalName: "Cedar Birth Prep",
     primaryColor: CEDAR_PRIMARY,
     confidentialityBlurb:
       "What you share in this portal stays between you and your Cedar team. Sensitive notes never go out in email.",

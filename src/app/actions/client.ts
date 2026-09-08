@@ -18,6 +18,8 @@ import { SlotUnavailableError, type SlotRejection } from "@/lib/calendar";
 import { readAnswers } from "@/lib/forms";
 import { beginCheckout, bookConsult, markAgreementSigned } from "@/lib/funnel";
 import { newId } from "@/lib/ids";
+import { clientAgreementStatuses } from "@/lib/queries";
+import { resourcesUnlocked } from "@/lib/resource-gate";
 import { requireClient } from "@/lib/tenancy";
 
 export async function signContractAction(contractId: string) {
@@ -143,6 +145,11 @@ export async function completeFormAction(formData: FormData) {
 
 export async function markResourceDoneAction(shareId: string) {
   const session = await requireClient();
+  // A page-level gate does not extend to the action behind it. Re-check the same
+  // predicate here so a stale tab or a hand-rolled POST cannot mark a locked handout
+  // read (TOK-39 E2). The org/client scoping on the update below still stands alone.
+  const gate = await clientAgreementStatuses(session.organizationId, session.clientId);
+  if (!resourcesUnlocked(gate)) return;
   const db = getDb();
   await db
     .update(resourceShares)

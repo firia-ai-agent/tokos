@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/tenancy";
 import { canManageTeam } from "@/lib/team";
 import { DEFAULT_PRIMARY_COLOR, TIMEZONES, contrastInk } from "@/lib/brand";
+import { DEFAULT_PORTAL_NAME } from "@/lib/client-brand";
 import { saveOrgBrandAction } from "@/app/actions/settings";
 import { BrandColorField } from "@/components/brand/brand-color";
 import { SettingsTabs } from "@/components/brand/settings-tabs";
@@ -94,9 +95,15 @@ export default async function DoulaSettingsPage({
                     <Input
                       id="portalName"
                       name="portalName"
-                      defaultValue={org?.portalName ?? ""}
+                      defaultValue={org?.portalName ?? DEFAULT_PORTAL_NAME}
+                      placeholder={DEFAULT_PORTAL_NAME}
                       required
                     />
+                    {/* This is the word families read over their portal, so the default
+                        describes the work — "Birth Prep" — not the product (TOK-39 E4). */}
+                    <p className="text-[12px] text-muted-foreground">
+                      What families see over their portal — your practice, not ours.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="timezone">Timezone</Label>

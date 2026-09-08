@@ -367,6 +367,34 @@ export async function clientChecklist(organizationId: string, clientId: string) 
   };
 }
 
+/**
+ * The two facts the resource gate turns on (TOK-39 E2): has this family signed, and has
+ * money cleared. Read as raw status lists rather than booleans so `resourceGate` can
+ * also tell whose turn it is — "ready to sign" and "invoice open" are different waits.
+ * Org-scoped on both reads; a client session never reaches another tenant's rows.
+ */
+export async function clientAgreementStatuses(organizationId: string, clientId: string) {
+  const db = getDb();
+  const [contractRows, invoiceRows] = await Promise.all([
+    db
+      .select({ status: contracts.status })
+      .from(contracts)
+      .where(
+        and(eq(contracts.organizationId, organizationId), eq(contracts.clientId, clientId)),
+      ),
+    db
+      .select({ status: invoices.status })
+      .from(invoices)
+      .where(
+        and(eq(invoices.organizationId, organizationId), eq(invoices.clientId, clientId)),
+      ),
+  ]);
+  return {
+    contractStatuses: contractRows.map((row) => row.status),
+    invoiceStatuses: invoiceRows.map((row) => row.status),
+  };
+}
+
 export async function listOrgClients(organizationId: string, doulaUserId: string) {
   const db = getDb();
   return db

@@ -4,6 +4,7 @@ import { organizations, portalMessages } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { unreadFor } from "@/lib/messages";
 import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
+import { clientChrome } from "@/lib/client-brand";
 import {
   markPortalMessagesReadAction,
   sendPortalMessageAction,
@@ -30,7 +31,7 @@ export default async function PortalMessagesPage() {
     .from(organizations)
     .where(eq(organizations.id, session.organizationId))
     .limit(1);
-  const practice = org?.portalName ?? org?.name ?? "NOVA Birth Prep";
+  const practice = clientChrome(org?.portalName, org?.name).portalName;
 
   // The thread is with a person, so it is signed with that person's name (TOK-38).
   const doula = await resolveAssignedDoulaName({

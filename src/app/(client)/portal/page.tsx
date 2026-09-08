@@ -4,7 +4,10 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { organizations } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
-import { clientChecklist } from "@/lib/queries";
+import { clientAgreementStatuses, clientChecklist } from "@/lib/queries";
+import { resourcesUnlocked } from "@/lib/resource-gate";
+import { clientChrome } from "@/lib/client-brand";
+import { portalBanners } from "@/lib/client-copy";
 import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import {
   formatPhoneNumber,
@@ -37,7 +40,7 @@ export default async function PortalHomePage({
     .from(organizations)
     .where(eq(organizations.id, session.organizationId))
     .limit(1);
-  const practice = org?.portalName ?? org?.name ?? "Your birth team";
+  const practice = clientChrome(org?.portalName, org?.name).portalName;
 
   // One resolve per render: every card names the same person the messages thread does.
   const doula = await resolveAssignedDoulaName({
@@ -52,7 +55,12 @@ export default async function PortalHomePage({
     doulaUserId: doula.userId,
   });
 
-  const cards = checklistCards(checklist, doula.name);
+  // Home must draw the same gate `/portal/resources` does, or the card promises a shelf
+  // the next click refuses to open (TOK-39 E2).
+  const agreement = await clientAgreementStatuses(session.organizationId, session.clientId);
+  const cards = checklistCards(checklist, doula.name, {
+    resourcesLocked: !resourcesUnlocked(agreement),
+  });
 
   // `source: "organization"` means the practice is standing in for a person who has not
   // been matched yet — the card says so rather than captioning a practice "primary doula".
@@ -66,23 +74,23 @@ export default async function PortalHomePage({
     facts.push({ label: locationFieldLabel(care.location.source), value: care.location.label });
   }
 
+  const banners = portalBanners(query, doula.firstName);
+
   const onCall = formatPhoneNumber(org?.onCallPhone);
   const onCallHref = phoneHref(org?.onCallPhone);
 
   return (
     <div className="space-y-6">
-      {query.signed ? (
-        <p className="rounded-lg bg-teal/10 px-3 py-2 text-sm text-teal-ink ring-1 ring-teal/20">
-          Signed — thank you. {doula.name} has your agreement. Your care is booked once the
-          fit consult is confirmed and the first payment clears.
+      {/* The copy is `client-copy.ts`, not this page (TOK-39 E6) — the old signed banner
+          recited the Complete rule out loud because it was written where it was shown. */}
+      {banners.map((banner) => (
+        <p
+          key={banner.key}
+          className="rounded-lg bg-teal/10 px-3 py-2 text-sm text-teal-ink ring-1 ring-teal/20"
+        >
+          {banner.text}
         </p>
-      ) : null}
-      {query.paid ? (
-        <p className="rounded-lg bg-teal/10 px-3 py-2 text-sm text-teal-ink ring-1 ring-teal/20">
-          Payment received. Once your fit consult with {doula.firstName} is confirmed, your
-          care is booked.
-        </p>
-      ) : null}
+      ))}
 
       <header>
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal">
@@ -164,16 +172,22 @@ export default async function PortalHomePage({
                 </p>
                 <p className="mt-2 text-[13px] text-muted-foreground">{card.detail}</p>
               </div>
-              <p
-                className={cn(
-                  "font-heading text-[28px] font-semibold leading-none tabular-nums",
-                  card.tone === "coral" ? "text-coral" : "text-teal-ink",
-                )}
-              >
-                {card.count}
-              </p>
+              {/* A locked card shows no number — see `checklistCards` (E2). */}
+              {card.locked ? null : (
+                <p
+                  className={cn(
+                    "font-heading text-[28px] font-semibold leading-none tabular-nums",
+                    card.tone === "coral" ? "text-coral" : "text-teal-ink",
+                  )}
+                >
+                  {card.count}
+                </p>
+              )}
             </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+            {/* Every card carried an "Open →" (TOK-39 E5). Six of them, all saying the
+                same thing about a card that is already a link — the arrow was chrome,
+                and it crowded out the one line that carries meaning. */}
+            <div className="mt-4">
               {/* The count is never a naked number — it always says what it counts. */}
               <p
                 className={cn(
@@ -183,7 +197,6 @@ export default async function PortalHomePage({
               >
                 {card.countLabel}
               </p>
-              <p className="text-[12px] font-semibold text-teal group-hover:underline">Open →</p>
             </div>
           </Link>
         ))}

@@ -124,3 +124,44 @@ describe("named card copy (TOK-38)", () => {
     expect(cards.unreadMessages.detail).toBe("Write to NOVA Birth Prep, and read the replies");
   });
 });
+
+describe("locked Resources card (TOK-39 E2)", () => {
+  const locked = (counts = { ...caughtUp, openResources: 3 }) =>
+    Object.fromEntries(
+      checklistCards(counts, "Maya Chen", { resourcesLocked: true }).map(
+        (card) => [card.key, card] as const,
+      ),
+    );
+
+  it("shows no number, so a locked shelf does not tease its contents", () => {
+    expect(locked().openResources.count).toBe(0);
+    expect(locked().openResources.countLabel).toBe("Opens after signing");
+  });
+
+  it("says when it opens, naming the doula who shares them", () => {
+    expect(locked().openResources.detail).toBe(
+      "Handouts Maya Chen shares once your agreement is signed and paid",
+    );
+    expect(locked().openResources.locked).toBe(true);
+  });
+
+  it("is never a chore — a family cannot do anything about it from here", () => {
+    expect(locked().openResources.actionable).toBe(false);
+    expect(locked().openResources.tone).toBe("ink");
+  });
+
+  it("touches no other card", () => {
+    const cards = locked({ ...caughtUp, openResources: 3, incompleteForms: 2 });
+    expect(cards.incompleteForms.countLabel).toBe("2 open");
+    expect(cards.openResources.href).toBe("/portal/resources");
+    for (const key of Object.keys(cards)) {
+      if (key !== "openResources") expect(cards[key].locked).toBeUndefined();
+    }
+  });
+
+  it("is the ordinary card once the gate opens", () => {
+    const cards = byKey({ ...caughtUp, openResources: 3 }, "Maya Chen");
+    expect(cards.openResources.countLabel).toBe("3 new");
+    expect(cards.openResources.locked).toBeUndefined();
+  });
+});
