@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { hash } from "bcryptjs";
 import { sql } from "drizzle-orm";
 import { closeDb, getDb } from "../src/db";
@@ -21,7 +23,6 @@ import {
   users,
 } from "../src/db/schema";
 import { saveProviderPhoto } from "../src/lib/provider-photo";
-import { renderProviderPhotoPng } from "./provider-portrait";
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const DOULA_ID = "22222222-2222-4222-8222-222222222222";
@@ -37,24 +38,28 @@ const DEMO_PASSWORD = "tokos-demo";
 const NOVA_PRIMARY = "#2A7A78";
 const CEDAR_PRIMARY = "#5C4A3A";
 
+/** Checked-in headshots; provenance and license live in `public/seed/ATTRIBUTION.md`. */
+const SEED_PHOTO_DIR = join(process.cwd(), "public", "seed");
+
 /**
  * Gives a seeded provider a photo through the real upload path, so a seeded photo and an
  * uploaded one are the same kind of row — S3 when keys are set, bytes on the `file_objects`
- * row when they are not — and a broken portrait fails the seed loudly instead of leaving a
- * profile the media route will 404.
+ * row when they are not — and a missing or malformed asset fails the seed loudly instead of
+ * leaving a profile the media route will 404.
  */
 async function seedProviderPhoto(input: {
   organizationId: string;
   userId: string;
   name: string;
-  baseColor: string;
+  photoFile: string;
 }) {
-  const png = renderProviderPhotoPng(input.baseColor);
+  const bytes = readFileSync(join(SEED_PHOTO_DIR, input.photoFile));
   const result = await saveProviderPhoto({
     organizationId: input.organizationId,
     userId: input.userId,
     // A plain view, not the Buffer: `File` takes the same BlobPart a browser upload does.
-    file: new File([new Uint8Array(png)], "provider-photo.png", { type: "image/png" }),
+    // The declared type is only a hint — `saveProviderPhoto` sniffs the bytes either way.
+    file: new File([new Uint8Array(bytes)], input.photoFile, { type: "image/jpeg" }),
   });
   if (!result.ok) throw new Error(`seed photo rejected for ${input.name}: ${result.code}`);
 }
@@ -144,7 +149,7 @@ async function main() {
     organizationId: ORG_ID,
     userId: DOULA_ID,
     name: "Maya Chen",
-    baseColor: NOVA_PRIMARY,
+    photoFile: "maya-chen.jpg",
   });
 
   const edd = new Date();
@@ -478,7 +483,7 @@ async function main() {
     organizationId: CEDAR_ORG_ID,
     userId: CEDAR_STAFF_ID,
     name: "Sam Ortega",
-    baseColor: CEDAR_PRIMARY,
+    photoFile: "sam-ortega.jpg",
   });
   await db.insert(clients).values({
     id: CEDAR_CLIENT_ID,
