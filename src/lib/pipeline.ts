@@ -100,7 +100,11 @@ export function canTransition(
     return { ok: false, reason: "Agreement signed follows fit only." };
   }
   if (to === "contract_complete" && from !== "agreement_signed") {
-    return { ok: false, reason: "Complete follows agreement_signed only." };
+    // Pay-then-sign: client can still be on `fit` after payment clears; once
+    // the agreement is also signed, complete is legal (TOK-22).
+    if (!(from === "fit" && flags.agreementSigned && canEnterContractComplete(flags))) {
+      return { ok: false, reason: "Complete follows agreement_signed only." };
+    }
   }
   if (to === "active_care" && from !== "contract_complete") {
     return { ok: false, reason: "Active care follows a complete contract." };
@@ -130,6 +134,14 @@ export function advanceAfterEvent(
   }
 
   return stage;
+}
+
+/** Canonical hops from `from` to `to` so maybeAdvance can record each stage. */
+export function plannedHops(from: PipelineStageName, to: PipelineStageName): PipelineStageName[] {
+  const fromIdx = indexOf(from);
+  const toIdx = indexOf(to);
+  if (toIdx <= fromIdx) return [];
+  return PIPELINE_STAGES.slice(fromIdx + 1, toIdx + 1);
 }
 
 export function allowedDoulaActions(

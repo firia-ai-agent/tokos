@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { esignArtifacts } from "@/db/schema";
 import { markAgreementSigned } from "@/lib/funnel";
+import { verifyDropboxSignEvent } from "@/lib/esign-webhook";
 
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
@@ -14,7 +15,20 @@ export async function POST(request: Request) {
     if (typeof raw === "string") payload = JSON.parse(raw) as Record<string, unknown>;
   }
 
-  const event = payload.event as { event_type?: string } | undefined;
+  const event = payload.event as
+    | { event_type?: string; event_time?: string; event_hash?: string }
+    | undefined;
+
+  const verified = verifyDropboxSignEvent({
+    apiKey: process.env.DROPBOX_SIGN_API_KEY,
+    eventTime: event?.event_time,
+    eventType: event?.event_type,
+    eventHash: event?.event_hash,
+  });
+  if (!verified.ok) {
+    return new Response("Invalid event signature", { status: 401 });
+  }
+
   const signatureRequest = payload.signature_request as
     | { signature_request_id?: string; metadata?: { contract_id?: string } }
     | undefined;

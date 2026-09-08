@@ -56,8 +56,8 @@ export default async function LoginPage({
           </CardContent>
         </Card>
         <p className="text-xs text-muted-foreground">
-          Doula: maya@novabirthpartners.com · Client: jordan.rivera@example.com · password
-          tokos-demo
+          Doula: maya@novabirthpartners.com · Clients: jordan.rivera@example.com,
+          avery.kim@example.com · password tokos-demo
         </p>
       </div>
     </div>

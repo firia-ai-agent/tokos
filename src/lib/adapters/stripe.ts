@@ -59,7 +59,8 @@ export async function createCheckoutSession(input: {
 
 export async function retrieveCheckoutSession(sessionId: string) {
   if (!hasStripe()) {
-    return { paid: true, metadata: {} as Record<string, string> };
+    const failed = /fail|cancel/i.test(sessionId);
+    return { paid: !failed, metadata: {} as Record<string, string> };
   }
   const session = await client().checkout.sessions.retrieve(sessionId);
   return {

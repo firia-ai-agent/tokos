@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { clientPortalAccess, memberships } from "@/db/schema";
+import { clientPortalAccess, clients, memberships } from "@/db/schema";
 import { auth } from "@/auth";
+import { clientOwnsRow, staffOwnsClient } from "@/lib/ownership";
 
 export type StaffSession = {
   actorType: "staff";
@@ -60,6 +62,37 @@ export async function requireClient() {
   const session = await requireSession();
   if (session.actorType !== "client") throw new Error("Forbidden");
   return session;
+}
+
+/** Stub/return pages: send anonymous visitors to login instead of completing sign/pay. */
+export async function requireClientPage() {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id || user.actorType !== "client" || !user.clientId || !user.organizationId) {
+    redirect("/login");
+  }
+  return {
+    actorType: "client" as const,
+    userId: user.id,
+    email: user.email ?? "",
+    name: user.name ?? "",
+    organizationId: user.organizationId,
+    clientId: user.clientId,
+  };
+}
+
+export async function requireStaffClient(clientId: string) {
+  const staff = await requireStaff();
+  const db = getDb();
+  const [client] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.id, clientId), eq(clients.organizationId, staff.organizationId)))
+    .limit(1);
+  if (!client || !staffOwnsClient(staff.organizationId, client)) {
+    throw new Error("Forbidden");
+  }
+  return { staff, client };
 }
 
 export async function assertStaffMembership(userId: string, organizationId: string) {

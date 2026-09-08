@@ -25,6 +25,11 @@ const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const DOULA_ID = "22222222-2222-4222-8222-222222222222";
 const CLIENT_USER_ID = "33333333-3333-4333-8333-333333333333";
 const CLIENT_ID = "44444444-4444-4444-8444-444444444444";
+const AVERY_USER_ID = "33333333-3333-4333-8333-333333333334";
+const AVERY_CLIENT_ID = "44444444-4444-4444-8444-444444444445";
+const CEDAR_ORG_ID = "11111111-1111-4111-8111-111111111112";
+const CEDAR_CLIENT_USER_ID = "33333333-3333-4333-8333-333333333336";
+const CEDAR_CLIENT_ID = "44444444-4444-4444-8444-444444444446";
 const DEMO_PASSWORD = "tokos-demo";
 
 async function main() {
@@ -67,6 +72,18 @@ async function main() {
       id: CLIENT_USER_ID,
       email: "jordan.rivera@example.com",
       name: "Jordan Rivera",
+      passwordHash,
+    },
+    {
+      id: AVERY_USER_ID,
+      email: "avery.kim@example.com",
+      name: "Avery Kim",
+      passwordHash,
+    },
+    {
+      id: CEDAR_CLIENT_USER_ID,
+      email: "riley.voss@example.com",
+      name: "Riley Voss",
       passwordHash,
     },
   ]);
@@ -137,6 +154,52 @@ async function main() {
     clientId: CLIENT_ID,
     userId: CLIENT_USER_ID,
     email: "jordan.rivera@example.com",
+    status: "active",
+    inviteSentAt: new Date(),
+  });
+
+  const averyEdd = new Date();
+  averyEdd.setDate(averyEdd.getDate() + 35);
+  await db.insert(clients).values({
+    id: AVERY_CLIENT_ID,
+    organizationId: ORG_ID,
+    displayName: "Avery Kim",
+    preferredName: "Avery",
+    email: "avery.kim@example.com",
+    phone: "(571) 555-0144",
+    source: "web",
+    edd: averyEdd.toISOString().slice(0, 10),
+    city: "Alexandria",
+    region: "VA",
+  });
+  await db.insert(pipelineStages).values({
+    id: "77777777-7777-4777-8777-777777777778",
+    organizationId: ORG_ID,
+    clientId: AVERY_CLIENT_ID,
+    stage: "new_lead",
+  });
+  await db.insert(pipelineEvents).values({
+    id: "88888888-8888-4888-8888-888888888889",
+    organizationId: ORG_ID,
+    clientId: AVERY_CLIENT_ID,
+    fromStage: null,
+    toStage: "new_lead",
+    reason: "seed",
+  });
+  await db.insert(assignments).values({
+    id: "99999999-9999-4999-8999-999999999990",
+    organizationId: ORG_ID,
+    clientId: AVERY_CLIENT_ID,
+    userId: DOULA_ID,
+    role: "primary",
+    status: "active",
+  });
+  await db.insert(clientPortalAccess).values({
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab",
+    organizationId: ORG_ID,
+    clientId: AVERY_CLIENT_ID,
+    userId: AVERY_USER_ID,
+    email: "avery.kim@example.com",
     status: "active",
     inviteSentAt: new Date(),
   });
@@ -217,6 +280,22 @@ async function main() {
       status: "incomplete",
       assigneeRole: "either",
     },
+    {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeef",
+      organizationId: ORG_ID,
+      templateId: intakeId,
+      clientId: AVERY_CLIENT_ID,
+      status: "incomplete",
+      assigneeRole: "either",
+    },
+    {
+      id: "ffffffff-ffff-4fff-8fff-fffffffffffe",
+      organizationId: ORG_ID,
+      templateId: preferencesId,
+      clientId: AVERY_CLIENT_ID,
+      status: "incomplete",
+      assigneeRole: "either",
+    },
   ]);
 
   const resourceId = "12121212-1212-4121-8121-121212121212";
@@ -228,21 +307,39 @@ async function main() {
     body: "Your doula stays with you, helps you change positions, talks with your partner, and keeps the plan visible. Your doula does not perform clinical exams or speak for your medical team.",
     tags: ["welcome", "expectations"],
   });
-  await db.insert(resourceShares).values({
-    id: "13131313-1313-4131-8131-131313131313",
-    organizationId: ORG_ID,
-    resourceId,
-    clientId: CLIENT_ID,
-  });
+  await db.insert(resourceShares).values([
+    {
+      id: "13131313-1313-4131-8131-131313131313",
+      organizationId: ORG_ID,
+      resourceId,
+      clientId: CLIENT_ID,
+    },
+    {
+      id: "13131313-1313-4131-8131-131313131314",
+      organizationId: ORG_ID,
+      resourceId,
+      clientId: AVERY_CLIENT_ID,
+    },
+  ]);
 
-  await db.insert(portalMessages).values({
-    id: "14141414-1414-4141-8141-141414141414",
-    organizationId: ORG_ID,
-    clientId: CLIENT_ID,
-    fromUserId: DOULA_ID,
-    direction: "outbound",
-    body: "Jordan — welcome. When you are ready, pick a fit consult on my calendar and we will see if we are the right match. No pressure.",
-  });
+  await db.insert(portalMessages).values([
+    {
+      id: "14141414-1414-4141-8141-141414141414",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      fromUserId: DOULA_ID,
+      direction: "outbound",
+      body: "Jordan — welcome. When you are ready, pick a fit consult on my calendar and we will see if we are the right match. No pressure.",
+    },
+    {
+      id: "14141414-1414-4141-8141-141414141415",
+      organizationId: ORG_ID,
+      clientId: AVERY_CLIENT_ID,
+      fromUserId: DOULA_ID,
+      direction: "outbound",
+      body: "Avery — welcome. Your portal is ready when you want to book a fit consult. No pressure.",
+    },
+  ]);
 
   const templates = [
     {
@@ -309,9 +406,57 @@ async function main() {
     });
   }
 
-  console.log(`Seeded NOVA Birth Partners.
-  Doula:  maya@novabirthpartners.com / ${DEMO_PASSWORD}
-  Client: jordan.rivera@example.com / ${DEMO_PASSWORD}
+  await db.insert(organizations).values({
+    id: CEDAR_ORG_ID,
+    name: "Cedar Birth Collective",
+    slug: "cedar-birth-collective",
+    timezone: "America/New_York",
+    portalName: "Cedar Birth Collective",
+    primaryColor: "#5C4A3A",
+    confidentialityBlurb:
+      "What you share in this portal stays between you and your Cedar team. Sensitive notes never go out in email.",
+    footerHtml: "Cedar Birth Collective · IDOR probe tenant",
+  });
+  await db.insert(clients).values({
+    id: CEDAR_CLIENT_ID,
+    organizationId: CEDAR_ORG_ID,
+    displayName: "Riley Voss",
+    preferredName: "Riley",
+    email: "riley.voss@example.com",
+    source: "web",
+    city: "Richmond",
+    region: "VA",
+  });
+  await db.insert(pipelineStages).values({
+    id: "77777777-7777-4777-8777-777777777779",
+    organizationId: CEDAR_ORG_ID,
+    clientId: CEDAR_CLIENT_ID,
+    stage: "new_lead",
+  });
+  await db.insert(pipelineEvents).values({
+    id: "88888888-8888-4888-8888-888888888880",
+    organizationId: CEDAR_ORG_ID,
+    clientId: CEDAR_CLIENT_ID,
+    fromStage: null,
+    toStage: "new_lead",
+    reason: "seed",
+  });
+  await db.insert(clientPortalAccess).values({
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac",
+    organizationId: CEDAR_ORG_ID,
+    clientId: CEDAR_CLIENT_ID,
+    userId: CEDAR_CLIENT_USER_ID,
+    email: "riley.voss@example.com",
+    status: "active",
+    inviteSentAt: new Date(),
+  });
+
+  console.log(`Seeded NOVA Birth Partners + Cedar IDOR tenant.
+  Doula:   maya@novabirthpartners.com / ${DEMO_PASSWORD}
+  Client:  jordan.rivera@example.com / ${DEMO_PASSWORD}
+  Client:  avery.kim@example.com / ${DEMO_PASSWORD}
+  Cedar:   riley.voss@example.com / ${DEMO_PASSWORD} (other org — Maya must not see)
+  Cedar client id: ${CEDAR_CLIENT_ID}
   Profile: /p/maya-chen`);
   await closeDb();
 }

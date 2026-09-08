@@ -6,9 +6,11 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   clients,
+  contracts,
   esignArtifacts,
   formAssignments,
   formSubmissions,
+  invoices,
   portalMessages,
   resourceShares,
 } from "@/db/schema";
@@ -35,6 +37,19 @@ export async function signContractAction(contractId: string) {
 
 export async function payInvoiceAction(invoiceId: string) {
   const session = await requireClient();
+  const db = getDb();
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.id, invoiceId),
+        eq(invoices.organizationId, session.organizationId),
+        eq(invoices.clientId, session.clientId),
+      ),
+    )
+    .limit(1);
+  if (!invoice) throw new Error("Forbidden");
   const checkout = await beginCheckout({
     organizationId: session.organizationId,
     invoiceId,
@@ -145,6 +160,11 @@ export async function updateClientProfileAction(formData: FormData) {
 
 export async function finalizeStubSign(contractId: string) {
   const session = await requireClient();
+  const db = getDb();
+  const [row] = await db.select().from(contracts).where(eq(contracts.id, contractId)).limit(1);
+  if (!row || row.organizationId !== session.organizationId || row.clientId !== session.clientId) {
+    throw new Error("Forbidden");
+  }
   await markAgreementSigned({
     organizationId: session.organizationId,
     contractId,

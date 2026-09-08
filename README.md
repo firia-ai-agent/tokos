@@ -55,23 +55,35 @@ App: [http://127.0.0.1:43127](http://127.0.0.1:43127)
 
 Demo logins after seed (password `tokos-demo`):
 
-| Role | Email |
-| --- | --- |
-| Doula / owner | `maya@novabirthpartners.com` |
-| Client | `jordan.rivera@example.com` |
+| Role | Email | Notes |
+| --- | --- | --- |
+| Doula / owner | `maya@novabirthpartners.com` | Sees Jordan **and** Avery (NOVA) |
+| Client | `jordan.rivera@example.com` | Primary happy-path client |
+| Client | `avery.kim@example.com` | Second NOVA client at `new_lead` |
+| Other-org client | `riley.voss@example.com` | Cedar Birth Collective — Maya must not see |
 
 Public profile + Book Consult: `/p/maya-chen`
 
+Reseed (wipes local/demo data, then recreates the tenants above):
+
+```bash
+npm run db:seed
+```
+
 ### Demo path (intake → complete contract)
 
-1. Sign in as Maya. Jordan is a `new_lead` on Home / Clients.
+1. Sign in as Maya. Jordan **and** Avery are `new_lead` on Home / Clients. Repeat the same path for Avery, or use Avery to confirm Jordan cannot open another client's portal IDs.
 2. Open Jordan → **Send intro** → **Start fit** (or book a consult from `/p/maya-chen`).
 3. **Confirm fit**. Fit confirmation is required for complete; a signature is not enough.
 4. **Send contract**. This creates a Tokos contract, Stripe invoice, Dropbox Sign request (stub without keys), and outbox emails.
 5. Sign out. Sign in as Jordan.
-6. Checklist → Agreement → **Review and sign** (Dropbox Sign redirect, or `/stub/sign` in demo).
-7. Pay → **Pay with card** (Stripe Checkout, or `/stub/pay` in demo).
-8. Stage becomes `contract_complete` only after steps 3 and 7. Jordan can use forms, resources, messages, and consults in `/portal`.
+6. Checklist → Agreement → **Review and sign** (Dropbox Sign redirect, or `/stub/sign` in demo). You must be signed in as that client — a bare UUID does not complete sign.
+7. Pay → **Pay with card** (Stripe Checkout, or `/stub/pay` in demo). Same auth rule: logged-in Jordan only.
+8. Stage becomes `contract_complete` only after steps 3 and 7 (sign-then-pay **or** pay-then-sign). Jordan can use forms, resources, messages, and consults in `/portal`.
+
+**Pay-fail (Veri):** while signed in as Jordan, open `/stub/pay?invoiceId=<id>&result=fail` and click **Simulate failed payment** (or `result=canceled`). Invoice stays due / not paid, `payment_statuses` is `failed` or `canceled` (not cleared), and the stage does not become `contract_complete`.
+
+**Tenancy probe:** as Maya, `/doula/clients/44444444-4444-4444-8444-444444444446` (Riley / Cedar) must 404. As Jordan, Avery's contract/invoice/stub URLs must not complete or leak.
 
 Without Stripe / Dropbox Sign / Resend / S3 keys, adapters run in **stub mode**. PHI (visit notes, health detail) is never written to email bodies, Stripe metadata, or e-sign custom fields.
 
@@ -82,7 +94,7 @@ Without Stripe / Dropbox Sign / Resend / S3 keys, adapters run in **stub mode**.
 3. Set `AUTH_SECRET`, `AUTH_URL`, `NEXT_PUBLIC_APP_URL`, and `CRON_SECRET`.
 4. Optionally set Stripe, Dropbox Sign, Resend, and S3 keys. Omit them to keep stub mode on preview.
 5. `vercel.json` schedules `GET /api/cron/outbox` every 5 minutes. Authorize with `Authorization: Bearer $CRON_SECRET`.
-6. Run `npm run db:push` (or `db:migrate` after `db:generate`) against the Neon URL, then `npm run db:seed` for the NOVA demo tenant.
+6. Run `npm run db:push` (or `db:migrate` after `db:generate`) against the Neon URL, then `npm run db:seed` for the NOVA demo tenants (Jordan + Avery) and the Cedar IDOR tenant.
 
 `drizzle-kit` and `tsx` do not load `.env.local` themselves — npm scripts wrap them with `dotenv-cli`.
 
@@ -93,7 +105,7 @@ npm run test
 npm run smoke   # mutates the seeded client through the funnel; re-run db:seed after
 ```
 
-Covers the pipeline state machine and the complete rule (signed ≠ complete; no signed-before-fit).
+Covers the pipeline state machine, the complete rule (signed ≠ complete; no signed-before-fit; pay-then-sign still completes), stub pay-fail honesty, Dropbox Sign webhook HMAC, and tenant ownership guards.
 
 ## Built vs deferred
 

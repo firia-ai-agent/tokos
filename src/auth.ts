@@ -74,10 +74,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const path = request.nextUrl.pathname;
       const isStaff = path.startsWith("/doula");
       const isClient = path.startsWith("/portal");
-      if (!isStaff && !isClient) return true;
+      const isStub = path.startsWith("/stub");
+      if (!isStaff && !isClient && !isStub) return true;
       if (!session?.user) return false;
       if (isStaff) return session.user.actorType === "staff";
-      if (isClient) return session.user.actorType === "client";
+      if (isClient || isStub) return session.user.actorType === "client";
       return true;
     },
     jwt({ token, user }) {

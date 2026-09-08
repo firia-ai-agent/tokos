@@ -25,9 +25,11 @@ import { enqueueEmail } from "@/lib/outbox";
 import {
   advanceAfterEvent,
   canTransition,
+  plannedHops,
   type FunnelFlags,
   type PipelineStageName,
 } from "@/lib/pipeline";
+import { isPaymentCleared, paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
 import { appUrl } from "@/lib/env";
 
 export async function getFunnelFlags(
@@ -77,7 +79,10 @@ export async function getFunnelFlags(
     stage: pipeline.stage as PipelineStageName,
     flags: {
       fitConfirmed: Boolean(pipeline.fitConfirmedAt),
-      paymentCleared: payment?.status === "cleared" || invoice?.status === "paid",
+      paymentCleared: isPaymentCleared({
+        paymentStatus: payment?.status,
+        invoiceStatus: invoice?.status,
+      }),
       agreementSigned: Boolean(contract?.signedAt) || contract?.status === "signed",
     },
     contractId: contract?.id,
@@ -116,14 +121,18 @@ async function maybeAdvance(
   reason: string,
 ) {
   const current = await getFunnelFlags(organizationId, clientId);
-  const next = advanceAfterEvent(current.stage, current.flags);
-  if (next !== current.stage) {
-    const check = canTransition(current.stage, next, current.flags);
-    if (!check.ok) return current.stage;
-    await writeStage(organizationId, clientId, current.stage, next, actorUserId, reason);
-    return next;
+  const target = advanceAfterEvent(current.stage, current.flags);
+  if (target === current.stage) return current.stage;
+
+  // Walk each canonical hop so pay-then-sign records agreement_signed then complete (TOK-22).
+  let stage = current.stage;
+  for (const hop of plannedHops(stage, target)) {
+    const check = canTransition(stage, hop, current.flags);
+    if (!check.ok) return stage;
+    await writeStage(organizationId, clientId, stage, hop, actorUserId, reason);
+    stage = hop;
   }
-  return current.stage;
+  return stage;
 }
 
 export async function sendIntro(input: {
@@ -460,6 +469,50 @@ export async function markInvoicePaid(input: {
   });
 
   return maybeAdvance(input.organizationId, invoice.clientId, input.actorUserId ?? null, "payment_cleared");
+}
+
+/** Stub/demo fail path: never marks invoice paid or payment cleared (TOK-17). */
+export async function recordPaymentFailure(input: {
+  organizationId: string;
+  invoiceId: string;
+  outcome: Extract<PaymentOutcome, "failed" | "canceled">;
+  actorUserId?: string | null;
+  externalId?: string;
+}) {
+  const db = getDb();
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.id, input.invoiceId), eq(invoices.organizationId, input.organizationId)))
+    .limit(1);
+  if (!invoice) throw new Error("Invoice not found");
+  if (invoice.status === "paid") {
+    throw new Error("Invoice already paid");
+  }
+
+  const statuses = paymentOutcomeStatuses(input.outcome);
+  if (invoice.contractId) {
+    await db
+      .update(paymentStatuses)
+      .set({
+        status: statuses.paymentStatus,
+        method: "manual",
+        externalId: input.externalId,
+        clearedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(paymentStatuses.contractId, invoice.contractId));
+  }
+
+  await writeAudit({
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    action: `invoice.payment_${input.outcome}`,
+    entityType: "invoice",
+    entityId: invoice.id,
+  });
+
+  return maybeAdvance(input.organizationId, invoice.clientId, input.actorUserId ?? null, `payment_${input.outcome}`);
 }
 
 export async function startActiveCare(input: {

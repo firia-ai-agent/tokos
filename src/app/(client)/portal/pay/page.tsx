@@ -7,9 +7,15 @@ import { formatCents } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/brand/states";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
-export default async function PayPage() {
+export default async function PayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ unpaid?: string; result?: string }>;
+}) {
   const session = await requireClient();
+  const { unpaid, result } = await searchParams;
   const db = getDb();
   const rows = await db
     .select()
@@ -25,6 +31,14 @@ export default async function PayPage() {
   return (
     <div className="space-y-4">
       <h2 className="font-heading text-2xl text-teal-ink">Pay</h2>
+      {unpaid ? (
+        <Alert>
+          <AlertDescription>
+            Payment was not completed{result ? ` (${result})` : ""}. The invoice is still due —
+            it is not paid or cleared, and the contract does not become complete.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {rows.map((invoice) => (
         <div key={invoice.id} className="rounded-xl border bg-card p-4">
           <div className="flex items-center justify-between">

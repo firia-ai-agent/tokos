@@ -50,27 +50,36 @@ export default async function ClientDetailPage({
   const events = await db
     .select()
     .from(pipelineEvents)
-    .where(eq(pipelineEvents.clientId, client.id))
+    .where(
+      and(eq(pipelineEvents.organizationId, staff.organizationId), eq(pipelineEvents.clientId, client.id)),
+    )
     .orderBy(desc(pipelineEvents.at));
   const contractRows = await db
     .select()
     .from(contracts)
-    .where(eq(contracts.clientId, client.id))
+    .where(and(eq(contracts.organizationId, staff.organizationId), eq(contracts.clientId, client.id)))
     .orderBy(desc(contracts.createdAt));
   const invoiceRows = await db
     .select()
     .from(invoices)
-    .where(eq(invoices.clientId, client.id));
+    .where(and(eq(invoices.organizationId, staff.organizationId), eq(invoices.clientId, client.id)));
   const messages = await db
     .select()
     .from(portalMessages)
-    .where(eq(portalMessages.clientId, client.id))
+    .where(
+      and(eq(portalMessages.organizationId, staff.organizationId), eq(portalMessages.clientId, client.id)),
+    )
     .orderBy(desc(portalMessages.sentAt));
   const forms = await db
     .select({ assignment: formAssignments, template: formTemplates })
     .from(formAssignments)
     .innerJoin(formTemplates, eq(formTemplates.id, formAssignments.templateId))
-    .where(eq(formAssignments.clientId, client.id));
+    .where(
+      and(
+        eq(formAssignments.organizationId, staff.organizationId),
+        eq(formAssignments.clientId, client.id),
+      ),
+    );
 
   return (
     <div className="space-y-6">

@@ -5,6 +5,7 @@ import {
   canEnterContractComplete,
   canTransition,
   PIPELINE_STAGES,
+  plannedHops,
 } from "./pipeline";
 
 const unsigned = {
@@ -137,6 +138,26 @@ describe("complete rule", () => {
         agreementSigned: true,
       }),
     ).toBe("contract_complete");
+  });
+
+  it("reaches contract_complete from fit when payment cleared before sign (TOK-22)", () => {
+    const flags = {
+      fitConfirmed: true,
+      paymentCleared: true,
+      agreementSigned: true,
+    };
+    expect(advanceAfterEvent("fit", flags)).toBe("contract_complete");
+    expect(canTransition("fit", "contract_complete", flags).ok).toBe(true);
+    expect(plannedHops("fit", "contract_complete")).toEqual([
+      "agreement_signed",
+      "contract_complete",
+    ]);
+    let stage: (typeof PIPELINE_STAGES)[number] = "fit";
+    for (const hop of plannedHops("fit", "contract_complete")) {
+      expect(canTransition(stage, hop, flags).ok).toBe(true);
+      stage = hop;
+    }
+    expect(stage).toBe("contract_complete");
   });
 
   it("stays at agreement_signed when payment is still due", () => {

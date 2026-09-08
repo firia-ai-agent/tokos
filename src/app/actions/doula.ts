@@ -13,7 +13,7 @@ import {
 } from "@/lib/funnel";
 import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
-import { requireStaff } from "@/lib/tenancy";
+import { requireStaff, requireStaffClient } from "@/lib/tenancy";
 import { appUrl } from "@/lib/env";
 
 export async function sendIntroAction(clientId: string) {
@@ -75,20 +75,21 @@ export async function startCareAction(clientId: string) {
 }
 
 export async function sendClientMessageAction(formData: FormData) {
-  const staff = await requireStaff();
   const clientId = String(formData.get("clientId") ?? "");
   const body = String(formData.get("body") ?? "").trim();
   if (!clientId || !body) return;
+  const { staff, client } = await requireStaffClient(clientId);
   const db = getDb();
   await db.insert(portalMessages).values({
     id: newId(),
     organizationId: staff.organizationId,
-    clientId,
+    clientId: client.id,
     fromUserId: staff.userId,
     direction: "outbound",
     body,
   });
   revalidatePath("/doula");
+  revalidatePath(`/doula/clients/${client.id}`);
   revalidatePath("/portal");
 }
 
