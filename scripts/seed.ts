@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { closeDb, getDb } from "../src/db";
 import {
   assignments,
+  auditLogs,
   availability,
   calendarEvents,
   clientPortalAccess,
@@ -28,6 +29,7 @@ import {
   resourceShares,
   resources,
   users,
+  visitNotes,
 } from "../src/db/schema";
 import {
   DEMO_ACCOUNTS,
@@ -36,6 +38,8 @@ import {
   demoLoginHintLines,
 } from "../src/lib/demo-logins";
 import { saveProviderPhoto } from "../src/lib/provider-photo";
+import { CHART_AUDIT_ACTIONS, CHART_ENTITY_TYPES, chartAuditMetadata } from "../src/lib/chart/audit-actions";
+import { parseChartAnswers } from "../src/lib/chart/schemas";
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const DOULA_ID = "22222222-2222-4222-8222-222222222222";
@@ -118,6 +122,7 @@ async function main() {
   const passwordHash = await hash(DEMO_PASSWORD, 10);
 
   await db.execute(sql`TRUNCATE TABLE
+    visit_notes, birth_logs, care_plans,
     invoice_lines, invoices, audit_logs, file_objects, outbox_messages,
     email_template_versions, email_templates, portal_messages, resource_shares,
     resources, form_submissions, form_assignments, form_templates,
@@ -385,6 +390,52 @@ async function main() {
     description: "Deposit — birth support package",
     quantity: 1,
     unitAmountCents: 90000,
+  });
+
+  // A prenatal note Maya started before the visit rather than after it (TOK-44): the
+  // consult is still ahead, so the only answers in it are the ones she already had from
+  // the enquiry. It is a `draft`, which is the state that matters — nothing is signed, so
+  // nothing is locked, and TOK-43 has a real row to render instead of an empty chart.
+  //
+  // Answers are parsed against the field defs on the way in, so a key typo fails the seed
+  // instead of quietly writing a question no form asks.
+  const jordanVisitNoteAnswers = parseChartAnswers("prenatal_visit", "draft", {
+    visit_date: consultStart.toISOString().slice(0, 10),
+    client_first_name: "Jordan",
+    client_last_name: "Rivera",
+    estimated_due_date: edd.toISOString().slice(0, 10),
+    partner_name: "Sam Rivera",
+    care_provider_name: "Dr. A. Okonkwo",
+    care_provider_practice: "Arlington OB",
+    expected_birth_place: "Virginia Hospital Center",
+  });
+  const JORDAN_VISIT_NOTE_ID = "2a2a2a2a-2a2a-4a2a-8a2a-2a2a2a2a2a2a";
+  await db.insert(visitNotes).values({
+    id: JORDAN_VISIT_NOTE_ID,
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    engagementId: JORDAN_ENGAGEMENT_ID,
+    authorUserId: DOULA_ID,
+    kind: "prenatal",
+    status: "draft",
+    visitDate: consultStart.toISOString().slice(0, 10),
+    answers: jordanVisitNoteAnswers,
+    // Left at the column default on purpose: staff_only. A family sees no chart.
+  });
+  await db.insert(auditLogs).values({
+    id: "2b2b2b2b-2b2b-4b2b-8b2b-2b2b2b2b2b2b",
+    organizationId: ORG_ID,
+    actorUserId: DOULA_ID,
+    action: CHART_AUDIT_ACTIONS.created,
+    entityType: CHART_ENTITY_TYPES.visitNote,
+    entityId: JORDAN_VISIT_NOTE_ID,
+    metadata: chartAuditMetadata({
+      entityType: CHART_ENTITY_TYPES.visitNote,
+      clientId: CLIENT_ID,
+      engagementId: JORDAN_ENGAGEMENT_ID,
+      version: 1,
+      sharePolicy: "staff_only",
+    }),
   });
 
   const averyEdd = new Date();
@@ -846,6 +897,7 @@ ${roster}
   Forms:   3 templates, 3 incomplete each for Jordan and Avery (TOK-27) — the postpartum one
            carries sensitive questions and is marked "For a visit" for co-complete
   Library: 2 resources; the comfort checklist is read by Jordan and unread by Avery
+  Chart:   one draft prenatal visit note for Jordan, staff_only, unsigned (TOK-44)
   Portal:  Jordan's message thread is two-way out of the box (TOK-28) — Maya's welcome
            yesterday, Jordan's reply this morning, both still unread on their own side`);
   await closeDb();

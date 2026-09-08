@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   date,
   index,
@@ -11,6 +12,12 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
+import type { ChartAnswers } from "../lib/chart/field-defs";
+import {
+  BIRTH_LOG_DEFAULT_SHARE_POLICY,
+  DEFAULT_SHARE_POLICY,
+} from "../lib/chart/share-policy";
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -425,6 +432,105 @@ export const providerProfiles = pgTable("provider_profiles", {
 }, (table) => [
   uniqueIndex("provider_profiles_slug_idx").on(table.slug),
   uniqueIndex("provider_profiles_user_idx").on(table.userId),
+]);
+
+/**
+ * Chart spine (TOK-44): the staff record NOVA fills in Dubsado today, in Neon.
+ *
+ * Neon is the system of record for the chart. These rows are the highest PHI tier the
+ * product holds, so they live here and nowhere else — never in Stripe metadata, a Resend
+ * body, or an e-sign field name. There is no FHIR write path and no FHIR mirror: FHIR is
+ * naming inspiration for later export seams only.
+ *
+ * Three rules the columns encode, spelled out in `docs/chart-schema-map.md`:
+ *  - Answers live in `answers` jsonb keyed by `lib/chart/field-defs`, so the field
+ *    inventory has one home instead of one column per Dubsado question.
+ *  - Sign locks the row. A correction is a new row pointing at its parent, never an
+ *    update in place — Dubsado's "once submitted it will no longer be editable", kept.
+ *  - `share_policy` is a flag on the row, defaulted closed. Birth logs default
+ *    `staff_only` and their clinical fields stay staff-only under every policy.
+ */
+
+export const visitNotes = pgTable("visit_notes", {
+  id: uuid("id").primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  clientId: uuid("client_id").notNull().references(() => clients.id),
+  engagementId: uuid("engagement_id").references(() => engagements.id),
+  authorUserId: uuid("author_user_id").notNull().references(() => users.id),
+  /** `prenatal` | `postpartum` — see `VISIT_NOTE_KINDS`. */
+  kind: text("kind").notNull(),
+  /** `draft` | `signed` | `amended` — see `CHART_STATUSES`. */
+  status: text("status").notNull().default("draft"),
+  version: integer("version").notNull().default(1),
+  /** The signed row this one amends. Null on a first version. */
+  parentVisitNoteId: uuid("parent_visit_note_id").references((): AnyPgColumn => visitNotes.id),
+  visitDate: date("visit_date"),
+  answers: jsonb("answers").$type<ChartAnswers>().notNull().default({}),
+  sharePolicy: text("share_policy").notNull().default(DEFAULT_SHARE_POLICY),
+  signedAt: timestamp("signed_at", { withTimezone: true }),
+  signedByUserId: uuid("signed_by_user_id").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("visit_notes_org_client_idx").on(table.organizationId, table.clientId),
+  index("visit_notes_org_engagement_idx").on(table.organizationId, table.engagementId),
+  index("visit_notes_parent_idx").on(table.parentVisitNoteId),
+]);
+
+/**
+ * The full NOVA birth log — header, labor timeline, baby, doula time, the 16-row
+ * dilation/effacement/station grid, interventions, degree of tearing, APGARs, newborn
+ * care. All of it, keyed by field def; none of it deferred (F8).
+ *
+ * `share_policy` is NOT NULL and defaults to `staff_only` deliberately. A family seeing
+ * this grid is the worst thing this table could do, so the closed default is a column
+ * constraint rather than something a query has to remember.
+ */
+export const birthLogs = pgTable("birth_logs", {
+  id: uuid("id").primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  clientId: uuid("client_id").notNull().references(() => clients.id),
+  engagementId: uuid("engagement_id").references(() => engagements.id),
+  authorUserId: uuid("author_user_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("draft"),
+  version: integer("version").notNull().default(1),
+  parentBirthLogId: uuid("parent_birth_log_id").references((): AnyPgColumn => birthLogs.id),
+  answers: jsonb("answers").$type<ChartAnswers>().notNull().default({}),
+  sharePolicy: text("share_policy").notNull().default(BIRTH_LOG_DEFAULT_SHARE_POLICY),
+  signedAt: timestamp("signed_at", { withTimezone: true }),
+  signedByUserId: uuid("signed_by_user_id").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("birth_logs_org_client_idx").on(table.organizationId, table.clientId),
+  index("birth_logs_org_engagement_idx").on(table.organizationId, table.engagementId),
+  index("birth_logs_parent_idx").on(table.parentBirthLogId),
+]);
+
+/**
+ * Birth preferences: the clusters the prenatal form gathers on the family's behalf —
+ * early labor choices, birth choices, newborn procedures, placenta, induction, cesarean.
+ *
+ * This is the one chart document that could ever be handed back to a family (Faith K1:
+ * signed preferences are shareable). It still starts `staff_only`; TOK-45 sets
+ * `preferences_shareable` on a signed plan when a doula chooses to.
+ */
+export const carePlans = pgTable("care_plans", {
+  id: uuid("id").primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  clientId: uuid("client_id").notNull().references(() => clients.id),
+  engagementId: uuid("engagement_id").references(() => engagements.id),
+  authorUserId: uuid("author_user_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("draft"),
+  version: integer("version").notNull().default(1),
+  parentCarePlanId: uuid("parent_care_plan_id").references((): AnyPgColumn => carePlans.id),
+  answers: jsonb("answers").$type<ChartAnswers>().notNull().default({}),
+  sharePolicy: text("share_policy").notNull().default(DEFAULT_SHARE_POLICY),
+  signedAt: timestamp("signed_at", { withTimezone: true }),
+  signedByUserId: uuid("signed_by_user_id").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("care_plans_org_client_idx").on(table.organizationId, table.clientId),
+  index("care_plans_org_engagement_idx").on(table.organizationId, table.engagementId),
+  index("care_plans_parent_idx").on(table.parentCarePlanId),
 ]);
 
 export const organizationsRelations = relations(organizations, ({ many }) => ({
