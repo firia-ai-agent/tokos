@@ -69,7 +69,7 @@ export default async function StubSignPage({
                 not a clinical consent and does not finish the contract by itself.
               </p>
               <Button type="submit" className="w-full">
-                Sign and return to Tokos
+                Sign and return to your portal
               </Button>
             </form>
           </CardContent>

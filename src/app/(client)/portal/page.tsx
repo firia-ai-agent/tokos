@@ -5,10 +5,8 @@ import { getDb } from "@/db";
 import { organizations } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { clientChecklist } from "@/lib/queries";
-import { clientStageLabel } from "@/lib/pipeline";
 import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { checklistCards, checklistSummary, openTaskCount } from "@/lib/checklist";
-import { getFunnelFlags } from "@/lib/funnel";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +18,6 @@ export default async function PortalHomePage({
   const query = await searchParams;
   const session = await requireClient();
   const checklist = await clientChecklist(session.organizationId, session.clientId);
-  const funnel = await getFunnelFlags(session.organizationId, session.clientId);
   const firstName = (session.name ?? "there").split(/\s+/)[0];
   // The practice's own brand, edited at /doula/settings — never a hardcoded tenant name.
   const db = getDb();
@@ -49,12 +46,14 @@ export default async function PortalHomePage({
     <div className="space-y-6">
       {query.signed ? (
         <p className="rounded-lg bg-teal/10 px-3 py-2 text-sm text-teal-ink ring-1 ring-teal/20">
-          Agreement signed. That is intent — complete still waits on fit and payment.
+          Signed — thank you. {doula.name} has your agreement. Your care is booked once the
+          fit consult is confirmed and the first payment clears.
         </p>
       ) : null}
       {query.paid ? (
         <p className="rounded-lg bg-teal/10 px-3 py-2 text-sm text-teal-ink ring-1 ring-teal/20">
-          Payment cleared. If fit is confirmed, your contract is complete.
+          Payment received. Once your fit consult with {doula.firstName} is confirmed, your
+          care is booked.
         </p>
       ) : null}
 
@@ -80,9 +79,6 @@ export default async function PortalHomePage({
               Caught up
             </Badge>
           )}
-          <Badge className="bg-teal-ink text-cloud hover:bg-teal-ink">
-            {clientStageLabel(funnel.stage)}
-          </Badge>
         </div>
       </header>
 

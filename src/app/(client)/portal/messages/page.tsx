@@ -67,7 +67,7 @@ export default async function PortalMessagesPage() {
           viewer="client"
           theirName={doula.name}
           emptyTitle="Start the conversation"
-          emptyBody={`Ask about a visit, a symptom you are wondering about, or anything on your mind. ${doula.firstName} answers here, and it all stays in Tokos.`}
+          emptyBody={`Ask about a visit, a symptom you are wondering about, or anything on your mind. ${doula.firstName} answers here, and it all stays in your portal.`}
         />
         <MessageComposer
           action={sendPortalMessageAction}

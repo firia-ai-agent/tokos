@@ -53,42 +53,51 @@
 }
 
 :root {
-  --cloud: oklch(0.97 0.012 220);
-  --teal: oklch(0.52 0.074 195);
-  --teal-ink: oklch(0.28 0.042 210);
-  --coral: oklch(0.68 0.13 28);
-  --background: oklch(0.97 0.012 220);
-  --foreground: oklch(0.28 0.042 210);
-  --card: oklch(0.995 0.004 220);
-  --card-foreground: oklch(0.28 0.042 210);
-  --popover: oklch(0.995 0.004 220);
-  --popover-foreground: oklch(0.28 0.042 210);
-  --primary: oklch(0.52 0.074 195);
-  --primary-foreground: oklch(0.99 0.01 200);
-  --secondary: oklch(0.93 0.02 210);
-  --secondary-foreground: oklch(0.28 0.042 210);
-  --muted: oklch(0.94 0.014 215);
-  --muted-foreground: oklch(0.45 0.03 210);
-  --accent: oklch(0.68 0.13 28);
-  --accent-foreground: oklch(0.99 0.01 30);
-  --destructive: oklch(0.55 0.18 25);
-  --border: oklch(0.88 0.02 210);
-  --input: oklch(0.88 0.02 210);
-  --ring: oklch(0.52 0.074 195);
-  --chart-1: oklch(0.52 0.074 195);
-  --chart-2: oklch(0.68 0.13 28);
-  --chart-3: oklch(0.72 0.06 200);
-  --chart-4: oklch(0.4 0.05 210);
-  --chart-5: oklch(0.82 0.04 80);
+  /*
+   * Faith's palette, pinned to exact hex (TOK-40). These four are the brand, so they are
+   * literals rather than a colour space a later edit rounds differently — a token that
+   * drifts is a rebrand nobody approved. Everything under them is derived: the neutral
+   * ramp is warm because Cloud is warm, not because it was eyeballed against a blue one.
+   */
+  --cloud: #F7F5F0;
+  --teal: #0F6E56;
+  --teal-ink: #04342C;
+  --coral: #D85A30;
+
+  --background: var(--cloud);
+  --foreground: var(--teal-ink);
+  --card: #FFFDF9;
+  --card-foreground: var(--teal-ink);
+  --popover: #FFFDF9;
+  --popover-foreground: var(--teal-ink);
+  --primary: var(--teal);
+  --primary-foreground: var(--cloud);
+  --secondary: #EBE7DE;
+  --secondary-foreground: var(--teal-ink);
+  --muted: #EFEBE3;
+  /* 5.2:1 on Cloud — secondary text still has to be readable. */
+  --muted-foreground: #5F6B64;
+  --accent: var(--coral);
+  --accent-foreground: #FFF8F4;
+  /* Deliberately not Coral: an error is not an accent, and the two must not read alike. */
+  --destructive: #9E2B1C;
+  --border: #DED8CC;
+  --input: #DED8CC;
+  --ring: var(--teal);
+  --chart-1: var(--teal);
+  --chart-2: var(--coral);
+  --chart-3: #4E9C86;
+  --chart-4: var(--teal-ink);
+  --chart-5: #C9A227;
   --radius: 0.75rem;
-  --sidebar: oklch(0.99 0.006 220);
-  --sidebar-foreground: oklch(0.28 0.042 210);
-  --sidebar-primary: oklch(0.52 0.074 195);
-  --sidebar-primary-foreground: oklch(0.99 0.01 200);
-  --sidebar-accent: oklch(0.93 0.02 210);
-  --sidebar-accent-foreground: oklch(0.28 0.042 210);
-  --sidebar-border: oklch(0.88 0.02 210);
-  --sidebar-ring: oklch(0.52 0.074 195);
+  --sidebar: #FFFDF9;
+  --sidebar-foreground: var(--teal-ink);
+  --sidebar-primary: var(--teal);
+  --sidebar-primary-foreground: var(--cloud);
+  --sidebar-accent: #EBE7DE;
+  --sidebar-accent-foreground: var(--teal-ink);
+  --sidebar-border: #DED8CC;
+  --sidebar-ring: var(--teal);
 }
 
 @layer base {

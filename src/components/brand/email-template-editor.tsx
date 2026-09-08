@@ -64,7 +64,7 @@ export function EmailTemplateEditor({
                   name="enabled"
                   checked={enabled}
                   onChange={(event) => setEnabled(event.target.checked)}
-                  className="size-4 accent-[#2A7A78]"
+                  className="size-4 accent-teal"
                 />
                 Enabled — the outbox only renders enabled templates
               </label>

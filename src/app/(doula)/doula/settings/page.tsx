@@ -3,7 +3,7 @@ import { getDb } from "@/db";
 import { organizations } from "@/db/schema";
 import { requireStaff } from "@/lib/tenancy";
 import { canManageTeam } from "@/lib/team";
-import { TIMEZONES, contrastInk } from "@/lib/brand";
+import { DEFAULT_PRIMARY_COLOR, TIMEZONES, contrastInk } from "@/lib/brand";
 import { saveOrgBrandAction } from "@/app/actions/settings";
 import { BrandColorField } from "@/components/brand/brand-color";
 import { SettingsTabs } from "@/components/brand/settings-tabs";
@@ -39,7 +39,7 @@ export default async function DoulaSettingsPage({
     .limit(1);
 
   const notice = NOTICES[query.error ?? ""] ?? NOTICES[query.saved ?? ""];
-  const color = org?.primaryColor ?? "#2A7A78";
+  const color = org?.primaryColor ?? DEFAULT_PRIMARY_COLOR;
 
   return (
     <div className="space-y-5">

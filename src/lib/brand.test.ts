@@ -12,7 +12,7 @@ import {
 
 const current: BrandValues = {
   portalName: "NOVA Birth Partners",
-  primaryColor: "#2A7A78",
+  primaryColor: "#0F6E56",
   websiteUrl: "https://novabirthpartners.com",
   onCallPhone: "(703) 555-0148",
   footerHtml: "NOVA Birth Partners · Northern Virginia",
@@ -23,14 +23,14 @@ const current: BrandValues = {
 describe("sanitizeHexColor", () => {
   it("expands shorthand and upper-cases", () => {
     expect(sanitizeHexColor("#abc")).toBe("#AABBCC");
-    expect(sanitizeHexColor("2a7a78")).toBe("#2A7A78");
+    expect(sanitizeHexColor("0f6e56")).toBe("#0F6E56");
   });
 
   it("falls back rather than writing junk into a style attribute", () => {
-    expect(sanitizeHexColor("rebeccapurple")).toBe("#2A7A78");
+    expect(sanitizeHexColor("rebeccapurple")).toBe("#0F6E56");
     expect(sanitizeHexColor("javascript:alert(1)", "#111111")).toBe("#111111");
     expect(sanitizeHexColor("", "#111111")).toBe("#111111");
-    expect(sanitizeHexColor("#12345")).toBe("#2A7A78");
+    expect(sanitizeHexColor("#12345")).toBe("#0F6E56");
   });
 });
 
@@ -140,7 +140,7 @@ describe("sanitizeBrand", () => {
 
 describe("contrastInk", () => {
   it("picks readable ink for the preview chip", () => {
-    expect(contrastInk("#2A7A78")).toBe("#FFFFFF");
-    expect(contrastInk("#FFF3E6")).toBe("#0F2E2D");
+    expect(contrastInk("#0F6E56")).toBe("#FFFFFF");
+    expect(contrastInk("#FFF3E6")).toBe("#04342C");
   });
 });

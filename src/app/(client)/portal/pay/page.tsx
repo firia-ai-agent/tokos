@@ -2,7 +2,9 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { invoices } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
+import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { payInvoiceAction } from "@/app/actions/client";
+import { invoiceStatusLabel } from "@/lib/client-status";
 import { formatCents } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +18,10 @@ export default async function PayPage({
 }) {
   const session = await requireClient();
   const { unpaid, result } = await searchParams;
+  const doula = await resolveAssignedDoulaName({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
+  });
   const db = getDb();
   const rows = await db
     .select()
@@ -25,7 +31,12 @@ export default async function PayPage({
     );
 
   if (rows.length === 0) {
-    return <EmptyState title="No invoices" body="An invoice appears when a contract is sent." />;
+    return (
+      <EmptyState
+        title="Nothing due"
+        body={`${doula.name} sends an invoice here once your care agreement goes out.`}
+      />
+    );
   }
 
   return (
@@ -34,29 +45,39 @@ export default async function PayPage({
       {unpaid ? (
         <Alert>
           <AlertDescription>
-            Payment was not completed{result ? ` (${result})` : ""}. The invoice is still due —
-            it is not paid or cleared, and the contract does not become complete.
+            Payment did not go through{result ? ` (${result})` : ""}. The invoice is still due,
+            and your care is not booked until it clears. Try again, or write {doula.firstName}.
           </AlertDescription>
         </Alert>
       ) : null}
-      {rows.map((invoice) => (
-        <div key={invoice.id} className="rounded-xl border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <p className="font-medium">{invoice.number}</p>
-            <Badge>{invoice.status}</Badge>
+      {rows.map((invoice) => {
+        const status = invoiceStatusLabel(invoice.status);
+        return (
+          <div key={invoice.id} className="rounded-xl border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <p className="font-medium">{invoice.number}</p>
+              <Badge
+                variant="secondary"
+                className={
+                  status.tone === "coral" ? "bg-coral/12 text-coral" : "bg-teal/12 text-teal-ink"
+                }
+              >
+                {status.label}
+              </Badge>
+            </div>
+            <p className="font-heading text-2xl text-teal-ink">
+              {formatCents(invoice.amountCents, invoice.currency)}
+            </p>
+            {invoice.status === "open" ? (
+              <form action={payInvoiceAction.bind(null, invoice.id)} className="mt-3">
+                <Button type="submit">Pay with card</Button>
+              </form>
+            ) : (
+              <p className="mt-2 text-sm text-teal">Paid — thank you.</p>
+            )}
           </div>
-          <p className="font-heading text-2xl text-teal-ink">
-            {formatCents(invoice.amountCents, invoice.currency)}
-          </p>
-          {invoice.status === "open" ? (
-            <form action={payInvoiceAction.bind(null, invoice.id)} className="mt-3">
-              <Button type="submit">Pay with card</Button>
-            </form>
-          ) : (
-            <p className="mt-2 text-sm text-teal">Paid</p>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

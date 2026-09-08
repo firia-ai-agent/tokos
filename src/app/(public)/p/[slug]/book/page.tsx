@@ -70,7 +70,7 @@ export default async function BookConsultPage({
           </div>
         </div>
         <p className="mb-6 mt-3 text-sm text-muted-foreground">
-          This starts your care conversation — a fit consult on {firstName}&rsquo;s Tokos
+          This starts your care conversation — a fit consult on {firstName}&rsquo;s
           calendar. Nothing is signed today, and signing later shows intent, not a finished
           agreement.
         </p>

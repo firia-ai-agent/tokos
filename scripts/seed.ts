@@ -6,12 +6,18 @@ import { closeDb, getDb } from "../src/db";
 import {
   assignments,
   availability,
+  calendarEvents,
   clientPortalAccess,
   clients,
+  contractEvents,
+  contracts,
   emailTemplates,
   emailTemplateVersions,
+  engagements,
   formAssignments,
   formTemplates,
+  invoiceLines,
+  invoices,
   invites,
   memberships,
   organizations,
@@ -29,6 +35,7 @@ const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const DOULA_ID = "22222222-2222-4222-8222-222222222222";
 const CLIENT_USER_ID = "33333333-3333-4333-8333-333333333333";
 const CLIENT_ID = "44444444-4444-4444-8444-444444444444";
+const PRIYA_USER_ID = "22222222-2222-4222-8222-222222222224";
 const AVERY_USER_ID = "33333333-3333-4333-8333-333333333334";
 const AVERY_CLIENT_ID = "44444444-4444-4444-8444-444444444445";
 const CEDAR_ORG_ID = "11111111-1111-4111-8111-111111111112";
@@ -36,13 +43,37 @@ const CEDAR_STAFF_ID = "22222222-2222-4222-8222-222222222223";
 const CEDAR_CLIENT_USER_ID = "33333333-3333-4333-8333-333333333336";
 const CEDAR_CLIENT_ID = "44444444-4444-4444-8444-444444444446";
 const DEMO_PASSWORD = "tokos-demo";
-const NOVA_PRIMARY = "#2A7A78";
+const NOVA_PRIMARY = "#0F6E56";
 const CEDAR_PRIMARY = "#5C4A3A";
 
 /** Checked-in headshots; provenance and license live in `public/seed/ATTRIBUTION.md`. */
 const SEED_PHOTO_DIR = join(process.cwd(), "public", "seed");
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000);
+
+/**
+ * A seeded consult has to land inside Maya's published availability — weekdays 10:00 to
+ * 16:00 in New York — so it is built in her timezone, not in UTC. The same 11am slot is
+ * 15:00Z in summer and 16:00Z in winter, and a seed that hardcodes one is wrong for half
+ * the year: it would sit outside her hours and read as a booking the app would refuse.
+ */
+function weekdayMorningEastern(daysAhead: number, hour: number) {
+  const day = new Date();
+  day.setUTCDate(day.getUTCDate() + daysAhead);
+  while (day.getUTCDay() === 0 || day.getUTCDay() === 6) {
+    day.setUTCDate(day.getUTCDate() + 1);
+  }
+  const guess = new Date(`${day.toISOString().slice(0, 10)}T${String(hour).padStart(2, "0")}:00:00Z`);
+  const landedOn = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
+    }).format(guess),
+  );
+  return new Date(guess.getTime() + (hour - landedOn) * 60 * 60 * 1000);
+}
 
 /**
  * Gives a seeded provider a photo through the real upload path, so a seeded photo and an
@@ -110,6 +141,13 @@ async function main() {
       passwordHash,
     },
     {
+      id: PRIYA_USER_ID,
+      email: "priya@novabirthpartners.com",
+      name: "Priya Raman",
+      passwordHash,
+      credentialsLabel: "CD(DONA), CLC",
+    },
+    {
       id: AVERY_USER_ID,
       email: "avery.kim@example.com",
       name: "Avery Kim",
@@ -130,12 +168,23 @@ async function main() {
     },
   ]);
 
-  await db.insert(memberships).values({
-    id: "55555555-5555-4555-8555-555555555555",
-    organizationId: ORG_ID,
-    userId: DOULA_ID,
-    role: "owner",
-  });
+  // Maya owns NOVA; Priya is a second doula who already accepted (TOK-41), so the roster
+  // is a real agency out of the box — two members and one still-pending invite — rather
+  // than a single owner with an empty table underneath.
+  await db.insert(memberships).values([
+    {
+      id: "55555555-5555-4555-8555-555555555555",
+      organizationId: ORG_ID,
+      userId: DOULA_ID,
+      role: "owner",
+    },
+    {
+      id: "55555555-5555-4555-8555-555555555557",
+      organizationId: ORG_ID,
+      userId: PRIYA_USER_ID,
+      role: "doula",
+    },
+  ]);
 
   // Maya stays NOVA's only owner. One live staff invite sits on `/doula/team` so the
   // roster has something pending out of the box — accepting it at `/invite/<token>`
@@ -187,20 +236,41 @@ async function main() {
     alternateContactPhone: "(571) 555-0110",
   });
 
+  // Jordan has already met Maya, so the row sits on `fit` with the hops that got it there.
+  // An agreement in the portal on top of a `new_lead` stage would be a state the funnel
+  // rules cannot produce (TOK-41).
   await db.insert(pipelineStages).values({
     id: "77777777-7777-4777-8777-777777777777",
     organizationId: ORG_ID,
     clientId: CLIENT_ID,
-    stage: "new_lead",
+    stage: "fit",
   });
-  await db.insert(pipelineEvents).values({
-    id: "88888888-8888-4888-8888-888888888888",
-    organizationId: ORG_ID,
-    clientId: CLIENT_ID,
-    fromStage: null,
-    toStage: "new_lead",
-    reason: "seed",
-  });
+  await db.insert(pipelineEvents).values([
+    {
+      id: "88888888-8888-4888-8888-888888888888",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      fromStage: null,
+      toStage: "new_lead",
+      reason: "seed",
+    },
+    {
+      id: "88888888-8888-4888-8888-88888888888a",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      fromStage: "new_lead",
+      toStage: "intro",
+      reason: "seed",
+    },
+    {
+      id: "88888888-8888-4888-8888-88888888888b",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      fromStage: "intro",
+      toStage: "fit",
+      reason: "seed",
+    },
+  ]);
   await db.insert(assignments).values({
     id: "99999999-9999-4999-8999-999999999999",
     organizationId: ORG_ID,
@@ -220,6 +290,85 @@ async function main() {
     inviteSentAt: new Date(),
   });
 
+  // Jordan is mid-care, not a fresh row (TOK-41): a consult on Maya's calendar, the
+  // agreement that went out while it is pending, and the deposit invoice that agreement
+  // opened — so the portal demos the real states instead of six empty ones in a row.
+  //
+  // Note the consult is still ahead: `fitConfirmed` is false, which is the point. A sent
+  // agreement and an open invoice do not add up to booked care.
+  const JORDAN_ENGAGEMENT_ID = "1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a";
+  const JORDAN_CONTRACT_ID = "1b1b1b1b-1b1b-4b1b-8b1b-1b1b1b1b1b1b";
+  const JORDAN_INVOICE_ID = "1c1c1c1c-1c1c-4c1c-8c1c-1c1c1c1c1c1c";
+
+  await db.insert(engagements).values({
+    id: JORDAN_ENGAGEMENT_ID,
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    packageLabel: "Birth support · full",
+    amountCents: 280000,
+    targetDate: edd.toISOString().slice(0, 10),
+    locationLabel: "Arlington, VA",
+    status: "open",
+    // The field `resolveAssignedDoulaName` reads first, so every client surface names
+    // Maya from the engagement rather than falling through to the assignment (TOK-38).
+    primaryDoulaUserId: DOULA_ID,
+  });
+
+  const consultStart = weekdayMorningEastern(3, 11);
+  const consultEnd = new Date(consultStart.getTime() + 45 * 60 * 1000);
+  await db.insert(calendarEvents).values({
+    id: "1d1d1d1d-1d1d-4d1d-8d1d-1d1d1d1d1d1d",
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    assigneeUserId: DOULA_ID,
+    type: "consult",
+    title: "Fit consult",
+    startsAt: consultStart,
+    endsAt: consultEnd,
+    status: "scheduled",
+    locationLabel: "Video or home visit — confirm in messages",
+  });
+
+  const agreementSentAt = hoursAgo(20);
+  await db.insert(contracts).values({
+    id: JORDAN_CONTRACT_ID,
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    engagementId: JORDAN_ENGAGEMENT_ID,
+    packageLabel: "Birth support · full",
+    amountCents: 280000,
+    status: "sent",
+    sentAt: agreementSentAt,
+  });
+  await db.insert(contractEvents).values({
+    id: "1e1e1e1e-1e1e-4e1e-8e1e-1e1e1e1e1e1e",
+    organizationId: ORG_ID,
+    contractId: JORDAN_CONTRACT_ID,
+    type: "sent",
+    actorUserId: DOULA_ID,
+    at: agreementSentAt,
+  });
+
+  await db.insert(invoices).values({
+    id: JORDAN_INVOICE_ID,
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    contractId: JORDAN_CONTRACT_ID,
+    engagementId: JORDAN_ENGAGEMENT_ID,
+    number: "NOVA-1001",
+    status: "open",
+    amountCents: 90000,
+    dueAt: daysFromNow(7),
+  });
+  await db.insert(invoiceLines).values({
+    id: "1f1f1f1f-1f1f-4f1f-8f1f-1f1f1f1f1f1f",
+    organizationId: ORG_ID,
+    invoiceId: JORDAN_INVOICE_ID,
+    description: "Deposit — birth support package",
+    quantity: 1,
+    unitAmountCents: 90000,
+  });
+
   const averyEdd = new Date();
   averyEdd.setDate(averyEdd.getDate() + 35);
   await db.insert(clients).values({
@@ -234,20 +383,32 @@ async function main() {
     city: "Alexandria",
     region: "VA",
   });
+  // Avery is a step behind Jordan: intro sent, no consult booked yet, so the pipeline has
+  // two clients in two different places instead of a column of identical rows (TOK-41).
   await db.insert(pipelineStages).values({
     id: "77777777-7777-4777-8777-777777777778",
     organizationId: ORG_ID,
     clientId: AVERY_CLIENT_ID,
-    stage: "new_lead",
+    stage: "intro",
   });
-  await db.insert(pipelineEvents).values({
-    id: "88888888-8888-4888-8888-888888888889",
-    organizationId: ORG_ID,
-    clientId: AVERY_CLIENT_ID,
-    fromStage: null,
-    toStage: "new_lead",
-    reason: "seed",
-  });
+  await db.insert(pipelineEvents).values([
+    {
+      id: "88888888-8888-4888-8888-888888888889",
+      organizationId: ORG_ID,
+      clientId: AVERY_CLIENT_ID,
+      fromStage: null,
+      toStage: "new_lead",
+      reason: "seed",
+    },
+    {
+      id: "88888888-8888-4888-8888-88888888888c",
+      organizationId: ORG_ID,
+      clientId: AVERY_CLIENT_ID,
+      fromStage: "new_lead",
+      toStage: "intro",
+      reason: "seed",
+    },
+  ]);
   await db.insert(assignments).values({
     id: "99999999-9999-4999-8999-999999999990",
     organizationId: ORG_ID,
@@ -307,7 +468,7 @@ async function main() {
     {
       id: preferencesId,
       organizationId: ORG_ID,
-      title: "Birth preferences (non-clinical)",
+      title: "Birth preferences",
       kind: "expectations",
       schemaJson: {
         fields: [
@@ -458,10 +619,8 @@ async function main() {
     },
   ]);
 
-  // Stamped relative to now so the thread reads as a conversation with a shape — the
-  // welcome yesterday, the family's reply this morning — instead of three lines at once.
-  const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000);
-
+  // Stamped relative to now (see `hoursAgo`) so the thread reads as a conversation with a
+  // shape — the welcome yesterday, the family's reply this morning — not three lines at once.
   await db.insert(portalMessages).values([
     {
       id: "14141414-1414-4141-8141-141414141414",
@@ -469,7 +628,7 @@ async function main() {
       clientId: CLIENT_ID,
       fromUserId: DOULA_ID,
       direction: "outbound",
-      body: "Jordan — welcome. When you are ready, pick a fit consult on my calendar and we will see if we are the right match. No pressure.",
+      body: "Jordan — good to meet you. I have us down for the fit consult, and I sent the care agreement so you can read it beforehand. No rush on signing; nothing is settled until we have talked.",
       sentAt: hoursAgo(28),
     },
     {
@@ -489,7 +648,7 @@ async function main() {
       clientId: CLIENT_ID,
       fromUserId: CLIENT_USER_ID,
       direction: "inbound",
-      body: "Thank you! I looked at your calendar — is a weekday morning still open? I am also wondering what a fit consult usually covers.",
+      body: "Thank you! I read through the agreement last night. Is the deposit due before our consult or after? And what does a fit consult usually cover?",
       sentAt: hoursAgo(3),
     },
   ]);
@@ -511,7 +670,7 @@ async function main() {
       triggerKey: "agreement_sent",
       name: "Agreement sent",
       subject: "Your care agreement is ready to sign",
-      text: "Hi {{client_name}}, review and sign in Tokos: {{sign_url}}",
+      text: "Hi {{client_name}}, your care agreement is ready. Review and sign it in your portal: {{sign_url}}",
     },
     {
       triggerKey: "invoice_due",
@@ -559,6 +718,8 @@ async function main() {
     });
   }
 
+  // Cedar is the second tenant every isolation check runs against, but its own families
+  // read its footer — so the footer says where Cedar practises, not what we use it for.
   await db.insert(organizations).values({
     id: CEDAR_ORG_ID,
     name: "Cedar Birth Collective",
@@ -568,7 +729,7 @@ async function main() {
     primaryColor: CEDAR_PRIMARY,
     confidentialityBlurb:
       "What you share in this portal stays between you and your Cedar team. Sensitive notes never go out in email.",
-    footerHtml: "Cedar Birth Collective · IDOR probe tenant",
+    footerHtml: "Cedar Birth Collective · Richmond",
   });
   await db.insert(memberships).values({
     id: "55555555-5555-4555-8555-555555555556",
@@ -627,14 +788,18 @@ async function main() {
     inviteSentAt: new Date(),
   });
 
-  console.log(`Seeded NOVA Birth Partners + Cedar IDOR tenant.
-  Doula:   maya@novabirthpartners.com / ${DEMO_PASSWORD}
+  console.log(`Seeded NOVA Birth Partners + Cedar tenant.
+  Doula:   maya@novabirthpartners.com / ${DEMO_PASSWORD} (owner)
+  Doula:   priya@novabirthpartners.com / ${DEMO_PASSWORD} (accepted second doula — TOK-41)
   Client:  jordan.rivera@example.com / ${DEMO_PASSWORD}
   Client:  avery.kim@example.com / ${DEMO_PASSWORD}
   Cedar staff: sam@cedarbirth.co / ${DEMO_PASSWORD} (owner of Cedar — must not reach NOVA clients)
   Cedar:   riley.voss@example.com / ${DEMO_PASSWORD} (other org — Maya must not see)
   Cedar client id: ${CEDAR_CLIENT_ID}
   Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25)
+  Pipeline: Jordan on fit, Avery on intro — two clients in two places, not a column of leads
+  Jordan:  fit consult booked with Maya, agreement sent, NOVA-1001 deposit open (TOK-41),
+           engagement primary is Maya so every client surface names her (TOK-38)
   Forms:   3 templates, 3 incomplete each for Jordan and Avery (TOK-27) — the postpartum one
            carries sensitive questions and is marked "For a visit" for co-complete
   Library: 2 resources; the comfort checklist is read by Jordan and unread by Avery

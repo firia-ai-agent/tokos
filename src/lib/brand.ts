@@ -6,7 +6,7 @@
  * style, and the footer HTML is reduced to the handful of tags a footer actually needs.
  */
 
-export const DEFAULT_PRIMARY_COLOR = "#2A7A78";
+export const DEFAULT_PRIMARY_COLOR = "#0F6E56";
 
 /** Zones the timezone picker offers. The column is free text; the form is not. */
 export const TIMEZONES = [
@@ -133,12 +133,12 @@ export function sanitizeBrand(input: BrandInput, current: BrandValues): BrandVal
 }
 
 /** Readable ink for a swatch, so the preview chip stays legible on any brand colour. */
-export function contrastInk(hex: string): "#0F2E2D" | "#FFFFFF" {
+export function contrastInk(hex: string): "#04342C" | "#FFFFFF" {
   const value = sanitizeHexColor(hex);
   const r = parseInt(value.slice(1, 3), 16);
   const g = parseInt(value.slice(3, 5), 16);
   const b = parseInt(value.slice(5, 7), 16);
   // Rec. 601 luma — good enough to pick between the two inks in the palette.
   const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luma > 0.6 ? "#0F2E2D" : "#FFFFFF";
+  return luma > 0.6 ? "#04342C" : "#FFFFFF";
 }

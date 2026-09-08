@@ -29,7 +29,7 @@ export default async function BookedPage({
       <main className="mx-auto max-w-lg space-y-4 px-4 py-16">
         <h1 className="font-heading text-3xl text-teal-ink">Consult requested</h1>
         <p className="text-muted-foreground">
-          You are on {doulaName}&rsquo;s Tokos calendar for a fit consult. If it is a match,
+          You are on {doulaName}&rsquo;s calendar for a fit consult. If it is a match,
           {" "}
           {firstName} sends a care agreement next. Signing shows intent; care is complete only
           after fit and payment.

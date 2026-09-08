@@ -23,7 +23,7 @@ export const organizations = pgTable("organizations", {
   slug: text("slug").notNull(),
   timezone: text("timezone").notNull().default("America/New_York"),
   portalName: text("portal_name").notNull(),
-  primaryColor: text("primary_color").notNull().default("#2A7A78"),
+  primaryColor: text("primary_color").notNull().default("#0F6E56"),
   customDomain: text("custom_domain"),
   footerHtml: text("footer_html"),
   onCallPhone: text("on_call_phone"),

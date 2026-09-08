@@ -4,6 +4,7 @@ import { contracts } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
 import { signContractAction } from "@/app/actions/client";
+import { contractStatusLabel } from "@/lib/client-status";
 import { formatCents } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/brand/states";
@@ -37,23 +38,34 @@ export default async function ContractPage() {
     <div className="space-y-4">
       <h2 className="font-heading text-2xl text-teal-ink">Care agreement</h2>
       <p className="text-sm text-muted-foreground">
-        A signature is intent. The contract is complete only when fit is confirmed and payment
-        clears.
+        Signing tells {doula.firstName} you are in. Your care is booked once the fit consult is
+        confirmed and the first payment clears.
       </p>
-      {rows.map((contract) => (
-        <div key={contract.id} className="rounded-xl border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <p className="font-medium">{contract.packageLabel}</p>
-            <Badge>{contract.status}</Badge>
+      {rows.map((contract) => {
+        // "Ready to sign", not "sent" — the badge says whose turn it is (TOK-41).
+        const status = contractStatusLabel(contract.status);
+        return (
+          <div key={contract.id} className="rounded-xl border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <p className="font-medium">{contract.packageLabel}</p>
+              <Badge
+                variant="secondary"
+                className={
+                  status.tone === "coral" ? "bg-coral/12 text-coral" : "bg-teal/12 text-teal-ink"
+                }
+              >
+                {status.label}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">{formatCents(contract.amountCents)}</p>
+            {contract.status === "sent" ? (
+              <form action={signContractAction.bind(null, contract.id)} className="mt-3">
+                <Button type="submit">Review and sign</Button>
+              </form>
+            ) : null}
           </div>
-          <p className="text-sm text-muted-foreground">{formatCents(contract.amountCents)}</p>
-          {contract.status === "sent" ? (
-            <form action={signContractAction.bind(null, contract.id)} className="mt-3">
-              <Button type="submit">Review and sign</Button>
-            </form>
-          ) : null}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

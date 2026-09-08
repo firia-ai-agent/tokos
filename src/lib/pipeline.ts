@@ -21,8 +21,12 @@ export const STAGE_LABELS: Record<PipelineStageName, string> = {
 
 /**
  * Family wording for the same canonical stages (TOK-32). A family is never a "lead" and
- * never sees a stage code: the portal and every public page read from this map, while
- * `/doula/*` keeps `STAGE_LABELS`. The DB column is unchanged — this is a display map.
+ * never sees a stage code, so any client or public surface that names a stage reads from
+ * this map; `/doula/*` keeps `STAGE_LABELS`. The DB column is unchanged.
+ *
+ * Portal Home shows no stage chip at all (TOK-40) — a family tracks their own next step
+ * off the checklist, not their position in someone else's funnel. This map stays because
+ * it is the sanctioned wording the moment a client surface does need one.
  */
 export const CLIENT_STAGE_LABELS: Record<PipelineStageName, string> = {
   new_lead: "Getting started",
