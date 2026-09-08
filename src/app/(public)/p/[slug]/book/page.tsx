@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { providerProfiles, users } from "@/db/schema";
 import { publicBookAction } from "@/app/actions/public";
 import { DemoBanner } from "@/components/brand/shell";
+import { ProviderAvatar } from "@/components/brand/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -41,8 +42,18 @@ export default async function BookConsultPage({
       <DemoBanner />
       <main className="mx-auto max-w-xl px-4 py-12">
         <p className="text-xs uppercase tracking-[0.25em] text-teal">Fit consult</p>
-        <h1 className="font-heading text-3xl text-teal-ink">Book with {row.user.name}</h1>
-        <p className="mb-6 text-sm text-muted-foreground">
+        <div className="flex items-center gap-4">
+          <ProviderAvatar name={row.user.name} photoFileId={row.profile.photoFileId} size={64} />
+          <div>
+            <h1 className="font-heading text-3xl text-teal-ink">Book with {row.user.name}</h1>
+            {row.user.credentialsLabel ? (
+              <p className="text-xs uppercase tracking-[0.18em] text-teal">
+                {row.user.credentialsLabel}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <p className="mb-6 mt-3 text-sm text-muted-foreground">
           This opens a lead on their Tokos calendar. A signature is never complete by itself.
         </p>
         {query.error ? (

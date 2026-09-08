@@ -65,6 +65,16 @@ Demo logins after seed (password `tokos-demo`):
 
 Public profile + Book Consult: `/p/maya-chen`
 
+**Provider photo (TOK-25):** as Maya, `/doula/profile` → **Profile photo** → pick a JPEG/PNG/WebP
+up to 2MB → **Save profile**. It shows on `/p/maya-chen` and `/p/maya-chen/book` alongside her
+credentials, and **Remove photo** puts the initials fallback back. Photos go to S3 when keys are
+set; without them the bytes stay on the `file_objects` row so preview deploys still render.
+Uploads are sniffed by magic bytes, so a renamed PDF or an SVG is rejected whatever the browser
+declared. `/api/media/<id>` serves provider photos only — it will not hand back signed contract
+evidence, which shares that table. The seed already attaches a generated placeholder portrait to
+Maya and Sam through that same upload path, so both public profiles have a face out of the box —
+use **Remove photo** to see the initials fallback.
+
 Reseed (wipes local/demo data, then recreates the tenants above):
 
 ```bash
@@ -118,7 +128,7 @@ Covers the pipeline state machine, the complete rule (signed ≠ complete; no si
 - Revenue-first doula Home, enforced funnel, send contract, invoices
 - Client portal checklist, sign, pay, two-way PortalMessage, forms, resources, profile
 - Tokos calendar availability + Book Consult
-- Public provider profile + QR
+- Public provider profile + QR + provider photo / credentials (TOK-25)
 - Outbox drain (Resend or stub) + Vercel Cron
 - Adapters with stub fallbacks
 

@@ -364,6 +364,10 @@ export const fileObjects = pgTable("file_objects", {
   contentType: text("content_type").notNull(),
   sizeBytes: integer("size_bytes"),
   purpose: text("purpose").notNull(),
+  // Stub mode has no bucket to read back from, so small non-PHI assets (provider photos)
+  // keep their bytes here as base64 to keep demo/preview deploys honest. Never set when
+  // S3 is configured, and never used for signed contract evidence.
+  inlineData: text("inline_data"),
   ...timestamps,
 });
 
@@ -415,6 +419,7 @@ export const providerProfiles = pgTable("provider_profiles", {
   bio: text("bio").notNull(),
   serviceArea: text("service_area"),
   ratesLabel: text("rates_label"),
+  photoFileId: uuid("photo_file_id").references(() => fileObjects.id),
   published: boolean("published").notNull().default(true),
   ...timestamps,
 }, (table) => [

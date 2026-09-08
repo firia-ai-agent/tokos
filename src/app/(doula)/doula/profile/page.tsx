@@ -3,16 +3,24 @@ import QRCode from "qrcode";
 import { getDb } from "@/db";
 import { providerProfiles } from "@/db/schema";
 import { requireStaff } from "@/lib/tenancy";
-import { saveProfileAction } from "@/app/actions/doula";
+import { removeProfilePhotoAction, saveProfileAction } from "@/app/actions/doula";
 import { appUrl } from "@/lib/env";
+import { photoErrorMessage } from "@/lib/photo";
+import { ProviderAvatar } from "@/components/brand/avatar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-export default async function DoulaProfilePage() {
+export default async function DoulaProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ photoError?: string }>;
+}) {
   const staff = await requireStaff();
+  const photoError = photoErrorMessage((await searchParams).photoError);
   const db = getDb();
   const [profile] = await db
     .select()
@@ -29,7 +37,22 @@ export default async function DoulaProfilePage() {
           <CardTitle>Public profile</CardTitle>
         </CardHeader>
         <CardContent>
+          {photoError ? (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{photoError}</AlertDescription>
+            </Alert>
+          ) : null}
           <form action={saveProfileAction} className="space-y-4">
+            <div className="flex items-center gap-4">
+              <ProviderAvatar name={staff.name} photoFileId={profile?.photoFileId ?? null} size={80} />
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="photo">Profile photo</Label>
+                <Input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" />
+                <p className="text-xs text-muted-foreground">
+                  JPEG, PNG, or WebP, up to 2MB. Families see this on your public profile.
+                </p>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="headline">Headline</Label>
               <Input id="headline" name="headline" defaultValue={profile?.headline} />
@@ -48,6 +71,13 @@ export default async function DoulaProfilePage() {
             </div>
             <Button type="submit">Save profile</Button>
           </form>
+          {profile?.photoFileId ? (
+            <form action={removeProfilePhotoAction} className="mt-3">
+              <Button type="submit" variant="outline" size="sm">
+                Remove photo
+              </Button>
+            </form>
+          ) : null}
         </CardContent>
       </Card>
       <Card>

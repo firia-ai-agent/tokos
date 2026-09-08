@@ -20,6 +20,8 @@ import {
   resources,
   users,
 } from "../src/db/schema";
+import { saveProviderPhoto } from "../src/lib/provider-photo";
+import { renderProviderPhotoPng } from "./provider-portrait";
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const DOULA_ID = "22222222-2222-4222-8222-222222222222";
@@ -32,6 +34,30 @@ const CEDAR_STAFF_ID = "22222222-2222-4222-8222-222222222223";
 const CEDAR_CLIENT_USER_ID = "33333333-3333-4333-8333-333333333336";
 const CEDAR_CLIENT_ID = "44444444-4444-4444-8444-444444444446";
 const DEMO_PASSWORD = "tokos-demo";
+const NOVA_PRIMARY = "#2A7A78";
+const CEDAR_PRIMARY = "#5C4A3A";
+
+/**
+ * Gives a seeded provider a photo through the real upload path, so a seeded photo and an
+ * uploaded one are the same kind of row — S3 when keys are set, bytes on the `file_objects`
+ * row when they are not — and a broken portrait fails the seed loudly instead of leaving a
+ * profile the media route will 404.
+ */
+async function seedProviderPhoto(input: {
+  organizationId: string;
+  userId: string;
+  name: string;
+  baseColor: string;
+}) {
+  const png = renderProviderPhotoPng(input.baseColor);
+  const result = await saveProviderPhoto({
+    organizationId: input.organizationId,
+    userId: input.userId,
+    // A plain view, not the Buffer: `File` takes the same BlobPart a browser upload does.
+    file: new File([new Uint8Array(png)], "provider-photo.png", { type: "image/png" }),
+  });
+  if (!result.ok) throw new Error(`seed photo rejected for ${input.name}: ${result.code}`);
+}
 
 async function main() {
   const db = getDb();
@@ -53,7 +79,7 @@ async function main() {
     slug: "nova-birth-partners",
     timezone: "America/New_York",
     portalName: "NOVA Birth Partners",
-    primaryColor: "#2A7A78",
+    primaryColor: NOVA_PRIMARY,
     websiteUrl: "https://novabirthpartners.com",
     onCallPhone: "(703) 555-0148",
     confidentialityBlurb:
@@ -113,6 +139,12 @@ async function main() {
     serviceArea: "Arlington, Alexandria, Fairfax, and DC",
     ratesLabel: "Birth package from $2,800",
     published: true,
+  });
+  await seedProviderPhoto({
+    organizationId: ORG_ID,
+    userId: DOULA_ID,
+    name: "Maya Chen",
+    baseColor: NOVA_PRIMARY,
   });
 
   const edd = new Date();
@@ -420,7 +452,7 @@ async function main() {
     slug: "cedar-birth-collective",
     timezone: "America/New_York",
     portalName: "Cedar Birth Collective",
-    primaryColor: "#5C4A3A",
+    primaryColor: CEDAR_PRIMARY,
     confidentialityBlurb:
       "What you share in this portal stays between you and your Cedar team. Sensitive notes never go out in email.",
     footerHtml: "Cedar Birth Collective · IDOR probe tenant",
@@ -441,6 +473,12 @@ async function main() {
     serviceArea: "Richmond and Petersburg",
     ratesLabel: "Birth package from $2,400",
     published: true,
+  });
+  await seedProviderPhoto({
+    organizationId: CEDAR_ORG_ID,
+    userId: CEDAR_STAFF_ID,
+    name: "Sam Ortega",
+    baseColor: CEDAR_PRIMARY,
   });
   await db.insert(clients).values({
     id: CEDAR_CLIENT_ID,
@@ -483,7 +521,7 @@ async function main() {
   Cedar staff: sam@cedarbirth.co / ${DEMO_PASSWORD} (owner of Cedar — must not reach NOVA clients)
   Cedar:   riley.voss@example.com / ${DEMO_PASSWORD} (other org — Maya must not see)
   Cedar client id: ${CEDAR_CLIENT_ID}
-  Profile: /p/maya-chen, /p/sam-ortega`);
+  Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25)`);
   await closeDb();
 }
 

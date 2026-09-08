@@ -1,6 +1,8 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { hasS3 } from "@/lib/env";
+
+export const STUB_BUCKET = "tokos-local-stub";
 
 function client() {
   return new S3Client({
@@ -13,7 +15,7 @@ function client() {
   });
 }
 
-export async function putSignedEvidence(input: {
+export async function putObject(input: {
   organizationId: string;
   key: string;
   body: Buffer | string;
@@ -22,7 +24,7 @@ export async function putSignedEvidence(input: {
   if (!hasS3()) {
     return {
       provider: "stub" as const,
-      bucket: "tokos-local-stub",
+      bucket: STUB_BUCKET,
       key: input.key,
     };
   }
@@ -39,11 +41,15 @@ export async function putSignedEvidence(input: {
   return { provider: "s3" as const, bucket, key: input.key };
 }
 
+/**
+ * Presigns a *read*. This has to be GetObjectCommand — presigning a PutObjectCommand
+ * yields an upload URL, which a browser <img> can never load.
+ */
 export async function signedGetUrl(bucket: string, key: string) {
-  if (!hasS3()) return null;
+  if (!hasS3() || bucket === STUB_BUCKET) return null;
   return getSignedUrl(
     client(),
-    new PutObjectCommand({ Bucket: bucket, Key: key }),
+    new GetObjectCommand({ Bucket: bucket, Key: key }),
     { expiresIn: 60 * 15 },
   );
 }

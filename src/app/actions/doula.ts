@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { formAssignments, formSubmissions, portalMessages, providerProfiles } from "@/db/schema";
@@ -14,6 +15,8 @@ import {
 import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
 import { requireStaff, requireStaffClient } from "@/lib/tenancy";
+import { clearProviderPhoto, saveProviderPhoto } from "@/lib/provider-photo";
+import type { PhotoErrorCode } from "@/lib/photo";
 import { appUrl } from "@/lib/env";
 
 export async function sendIntroAction(clientId: string) {
@@ -131,6 +134,29 @@ export async function saveProfileAction(formData: FormData) {
         eq(providerProfiles.organizationId, staff.organizationId),
       ),
     );
+
+  // The photo rides along on the same form, but an untouched file input still submits an
+  // empty File, so only a non-empty pick counts as an upload.
+  const photo = formData.get("photo");
+  let photoError: PhotoErrorCode | null = null;
+  if (photo instanceof File && photo.size > 0) {
+    const result = await saveProviderPhoto({
+      organizationId: staff.organizationId,
+      userId: staff.userId,
+      file: photo,
+    });
+    if (!result.ok) photoError = result.code;
+  }
+
+  // The public profile pages are force-dynamic, so they pick the photo up on next request.
+  revalidatePath("/doula/profile");
+  if (photoError) redirect(`/doula/profile?photoError=${photoError}`);
+}
+
+export async function removeProfilePhotoAction() {
+  const staff = await requireStaff();
+  await clearProviderPhoto({ organizationId: staff.organizationId, userId: staff.userId });
+  // The public profile pages are force-dynamic, so they pick the photo up on next request.
   revalidatePath("/doula/profile");
 }
 

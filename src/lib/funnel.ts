@@ -18,7 +18,7 @@ import {
 } from "@/db/schema";
 import { createSignatureRequest } from "@/lib/adapters/esign";
 import { createCheckoutSession } from "@/lib/adapters/stripe";
-import { putSignedEvidence } from "@/lib/adapters/s3";
+import { putObject } from "@/lib/adapters/s3";
 import { writeAudit } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
@@ -396,7 +396,7 @@ export async function markAgreementSigned(input: {
     .set({ rawStatus: "signed", signedAt: new Date(), updatedAt: new Date() })
     .where(eq(esignArtifacts.contractId, contract.id));
 
-  const evidence = await putSignedEvidence({
+  const evidence = await putObject({
     organizationId: input.organizationId,
     key: `contracts/${input.organizationId}/${contract.id}.txt`,
     body: `Signed care agreement ${contract.id} at ${new Date().toISOString()}`,
