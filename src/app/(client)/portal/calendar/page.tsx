@@ -51,21 +51,21 @@ export default async function PortalCalendarPage({
 
   return (
     <div className="space-y-6">
-      <h2 className="font-heading text-2xl text-teal-ink">Consults</h2>
+      <h2 className="font-heading text-2xl text-teal-ink">Visits</h2>
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
       <section className="space-y-3">
-        <h3 className="text-sm font-medium">Upcoming consults</h3>
+        <h3 className="text-sm font-medium">Coming up</h3>
         {upcoming.length === 0 ? (
           <EmptyState
             title="Nothing booked"
             body={
               doula.userId
-                ? `Pick a fit window on ${doula.firstName}'s calendar below.`
-                : "A fit window will open here once you are matched with a doula."
+                ? `Pick a time on ${doula.firstName}'s calendar below.`
+                : "Times will open here once you are matched with a doula."
             }
           />
         ) : (
@@ -80,7 +80,7 @@ export default async function PortalCalendarPage({
       </section>
       {doula.userId && slots.length > 0 ? (
         <section className="space-y-3">
-          <h3 className="text-sm font-medium">Book another with {doula.firstName}</h3>
+          <h3 className="text-sm font-medium">Book with {doula.name}</h3>
           <form action={bookClientConsultAction} className="space-y-3">
             <input type="hidden" name="assigneeUserId" value={doula.userId} />
             <fieldset className="space-y-2">
@@ -100,7 +100,7 @@ export default async function PortalCalendarPage({
                 </label>
               ))}
             </fieldset>
-            <Button type="submit">Book consult</Button>
+            <Button type="submit">Book this time</Button>
           </form>
         </section>
       ) : null}

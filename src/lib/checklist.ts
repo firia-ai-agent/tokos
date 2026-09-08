@@ -93,8 +93,8 @@ const CARDS: readonly CardSpec[] = [
   {
     key: "upcomingConsults",
     href: "/portal/calendar",
-    label: "Consults",
-    detail: (doula) => `Fit visits on ${doula}'s calendar`,
+    label: "Visits",
+    detail: (doula) => `Time booked with ${doula}`,
     noun: "booked",
     zero: "None booked",
     chore: false,

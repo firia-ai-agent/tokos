@@ -15,6 +15,7 @@ import {
   paymentStatuses,
   pipelineEvents,
   pipelineStages,
+  users,
 } from "@/db/schema";
 import { createSignatureRequest } from "@/lib/adapters/esign";
 import { createCheckoutSession } from "@/lib/adapters/stripe";
@@ -149,6 +150,14 @@ export async function sendIntro(input: {
   const db = getDb();
   const [client] = await db.select().from(clients).where(eq(clients.id, input.clientId)).limit(1);
   if (client) {
+    // The welcome names whoever sent it, so the first email a family gets reads the same
+    // as the portal they are about to open (TOK-38 B11). The actor is already known to be
+    // staff in this org, so this is a name lookup, not a trust decision.
+    const [sender] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, input.actorUserId))
+      .limit(1);
     await enqueueEmail({
       organizationId: input.organizationId,
       triggerKey: "client_welcome",
@@ -157,6 +166,7 @@ export async function sendIntro(input: {
         client_name: client.preferredName || client.displayName,
         portal_url: `${appUrl()}/login`,
         profile_url: input.profileUrl,
+        doula_name: sender?.name ?? "",
       },
     });
   }

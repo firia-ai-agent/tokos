@@ -18,6 +18,11 @@ describe("template variables", () => {
       "portal_url",
     ]);
     expect(allowedVars("agreement_sent")).toContain("sign_url");
+    // The welcome names the person who sent it (TOK-38 B11) — and only that trigger,
+    // because it is the only one that supplies the value at enqueue time.
+    expect(allowedVars("client_welcome")).toContain("doula_name");
+    expect(allowedVars("invoice_due")).not.toContain("doula_name");
+    expect(sampleVars("client_welcome", "NOVA").doula_name).toBeTruthy();
     expect(allowedVars("doula_invited")).toContain("invite_url");
   });
 

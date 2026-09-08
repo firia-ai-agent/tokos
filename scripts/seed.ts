@@ -575,15 +575,18 @@ async function main() {
     {
       id: resourceId,
       organizationId: ORG_ID,
-      title: "What a NOVA doula does (and does not do)",
+      // Written in Maya's own voice: a family reads a person here, never "your doula"
+      // (TOK-38 B11). The title says whose handout it is, so it cannot collide with the
+      // comfort checklist below in the portal list (TOK-41 G7).
+      title: "What Maya does (and does not do)",
       kind: "handout",
-      body: "Your doula stays with you, helps you change positions, talks with your partner, and keeps the plan visible. Your doula does not perform clinical exams or speak for your medical team.",
+      body: "I stay with you, help you change positions, talk with your partner, and keep the plan visible. I do not perform clinical exams and I do not speak for your medical team — that stays with your midwife or doctor.",
       tags: ["welcome", "expectations"],
     },
     {
       id: comfortResourceId,
       organizationId: ORG_ID,
-      title: "Comfort measures you can practice this week",
+      title: "Comfort measures to practice before labor",
       kind: "checklist",
       body: "Ten minutes a day is enough: slow breathing with a long exhale, hip squeezes with your partner, leaning forward over the counter, warm compress on the low back, and a playlist you actually like. Practice while nothing hurts so your body knows the moves later.",
       tags: ["comfort", "labor", "partner"],
@@ -658,7 +661,7 @@ async function main() {
       triggerKey: "client_welcome",
       name: "Client welcome",
       subject: "Welcome to {{org_name}}",
-      text: "Hi {{client_name}}, your doula shared an introduction. Open your portal: {{portal_url}}",
+      text: "Hi {{client_name}}, {{doula_name}} shared an introduction with you. Open your portal: {{portal_url}}",
     },
     {
       triggerKey: "client_portal_invite",

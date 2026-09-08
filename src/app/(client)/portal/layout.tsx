@@ -15,7 +15,7 @@ const nav = [
   { href: "/portal/contract", label: "Agreement" },
   { href: "/portal/pay", label: "Pay" },
   { href: "/portal/messages", label: "Messages" },
-  { href: "/portal/calendar", label: "Consults" },
+  { href: "/portal/calendar", label: "Visits" },
   { href: "/portal/profile", label: "Profile" },
 ];
 
@@ -27,7 +27,7 @@ const navGroups: ShellNavGroup[] = [
       { href: "/portal/forms", label: "Forms" },
       { href: "/portal/resources", label: "Resources" },
       { href: "/portal/messages", label: "Messages" },
-      { href: "/portal/calendar", label: "Consults" },
+      { href: "/portal/calendar", label: "Visits" },
     ],
   },
   {

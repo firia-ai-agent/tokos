@@ -76,7 +76,7 @@ export function AppShell({
           { label: "Agreement", href: "/portal/contract", keywords: "agreement contract sign" },
           { label: "Pay", href: "/portal/pay", keywords: "pay invoice" },
           { label: "Messages", href: "/portal/messages", keywords: "messages" },
-          { label: "Consults", href: "/portal/calendar", keywords: "consults calendar" },
+          { label: "Visits", href: "/portal/calendar", keywords: "visits consults calendar fit" },
           { label: "Profile", href: "/portal/profile", keywords: "profile" },
         ]);
 

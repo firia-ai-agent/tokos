@@ -13,7 +13,9 @@ const COMMON_VARS = ["org_name", "client_name", "portal_url"] as const;
 
 /** Extra vars a specific trigger supplies at enqueue time. */
 const TRIGGER_VARS: Record<string, readonly string[]> = {
-  client_welcome: ["profile_url"],
+  // `doula_name` is the person who actually sent the intro, so the welcome names them
+  // instead of saying "your doula" (TOK-38 B11). It is a display name, not a form answer.
+  client_welcome: ["profile_url", "doula_name"],
   client_portal_invite: ["invite_url"],
   agreement_sent: ["sign_url"],
   invoice_due: ["invoice_number"],
@@ -96,6 +98,7 @@ export function sampleVars(triggerKey: string, orgName: string): Record<string, 
     client_name: "Sample Family",
     portal_url: "https://example.com/portal",
     profile_url: "https://example.com/p/your-profile",
+    doula_name: "Sample Doula",
     invite_url: "https://example.com/invite/sample-token",
     invite_role: "Doula",
     token: "sample-token",

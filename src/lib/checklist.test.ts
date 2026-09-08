@@ -104,7 +104,7 @@ describe("named card copy (TOK-38)", () => {
     const cards = byKey(caughtUp, "Maya Chen");
     expect(cards.unreadMessages.detail).toBe("Write to Maya Chen, and read the replies");
     expect(cards.openResources.detail).toBe("Handouts Maya Chen shared for birth prep");
-    expect(cards.upcomingConsults.detail).toBe("Fit visits on Maya Chen's calendar");
+    expect(cards.upcomingConsults.detail).toBe("Time booked with Maya Chen");
     for (const card of checklistCards(caughtUp, "Maya Chen")) {
       expect(card.detail.toLowerCase()).not.toContain("your doula");
     }
