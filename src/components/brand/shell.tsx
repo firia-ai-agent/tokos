@@ -75,7 +75,7 @@ export function AppShell({
         ]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-cloud">
+    <div className="flex min-h-screen flex-col bg-background">
       <DemoBanner />
       <div className="flex min-h-0 flex-1">
         <aside className="sticky top-0 hidden h-[100dvh] w-[248px] shrink-0 flex-col bg-teal-ink px-3.5 py-5 lg:flex">

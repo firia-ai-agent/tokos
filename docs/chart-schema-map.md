@@ -211,6 +211,6 @@ template fills in when the inventory lands.
 |---|---|
 | Chart pages, forms, the grid UI | TOK-43 |
 | Read/share/break-glass APIs, assigned-doula enforcement | TOK-45 |
-| Shell/role chrome | TOK-46 |
+| Shell/role chrome | TOK-46 canceled (shell PASS on the TOK-39 tip) — follow-on work rides TOK-34 |
 | SMS, Acuity import, AI drafting, claims/coding | Out of P1 (F2/F5, calendar lock) |
 | FHIR adapters of any kind | Not planned as a write path |

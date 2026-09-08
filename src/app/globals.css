@@ -64,18 +64,23 @@
   --teal-ink: #04342C;
   --coral: #D85A30;
 
-  --background: var(--cloud);
+  /*
+   * The page wash is plain white (TOK-40). Cloud is still Faith's — it just earns its
+   * warmth by being the inset now: a chip, an empty state, a panel set into a card. A
+   * whole page of it reads as a tint over the work; a chip of it reads as a material.
+   */
+  --background: #FFFFFF;
   --foreground: var(--teal-ink);
-  --card: #FFFDF9;
+  --card: #FFFFFF;
   --card-foreground: var(--teal-ink);
-  --popover: #FFFDF9;
+  --popover: #FFFFFF;
   --popover-foreground: var(--teal-ink);
   --primary: var(--teal);
   --primary-foreground: var(--cloud);
   --secondary: #EBE7DE;
   --secondary-foreground: var(--teal-ink);
   --muted: #EFEBE3;
-  /* 5.2:1 on Cloud — secondary text still has to be readable. */
+  /* 5.6:1 on white, 5.2:1 on Cloud — secondary text still has to be readable on both. */
   --muted-foreground: #5F6B64;
   --accent: var(--coral);
   --accent-foreground: #FFF8F4;
@@ -90,7 +95,7 @@
   --chart-4: var(--teal-ink);
   --chart-5: #C9A227;
   --radius: 0.75rem;
-  --sidebar: #FFFDF9;
+  --sidebar: #FFFFFF;
   --sidebar-foreground: var(--teal-ink);
   --sidebar-primary: var(--teal);
   --sidebar-primary-foreground: var(--cloud);

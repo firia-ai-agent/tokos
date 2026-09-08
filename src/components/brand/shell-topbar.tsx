@@ -86,7 +86,7 @@ export function ShellTopBar({
   }
 
   return (
-    <header className="sticky top-0 z-20 hidden items-center gap-2.5 border-b border-teal/15 bg-cloud/95 px-5 py-2.5 backdrop-blur lg:flex lg:px-8">
+    <header className="sticky top-0 z-20 hidden items-center gap-2.5 border-b border-teal/15 bg-background/95 px-5 py-2.5 backdrop-blur lg:flex lg:px-8">
       <form className="relative w-full max-w-[320px]" onSubmit={onSearchSubmit} role="search">
         <Search
           className="pointer-events-none absolute left-3 top-1/2 size-[15px] -translate-y-1/2 text-muted-foreground"

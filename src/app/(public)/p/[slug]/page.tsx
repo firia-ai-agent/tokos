@@ -46,7 +46,7 @@ export default async function ProviderProfilePage({
   ].filter((fact): fact is { label: string; value: string } => Boolean(fact.value));
 
   return (
-    <div className="min-h-screen bg-cloud">
+    <div className="min-h-screen bg-background">
       <DemoBanner />
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:py-14">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_17rem] lg:gap-12">
