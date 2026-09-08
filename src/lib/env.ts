@@ -1,9 +1,29 @@
+const LOCAL_APP_URL = "http://127.0.0.1:43127";
+
+function stripTrailingSlash(url: string) {
+  return url.replace(/\/+$/, "");
+}
+
+// A preview deploy can inherit a loopback NEXT_PUBLIC_APP_URL / AUTH_URL (e.g. from a
+// leaked .env.local), which would send Stripe/e-sign return URLs off the preview host.
+function isLoopback(url: string) {
+  const value = url.toLowerCase();
+  return value.includes("127.0.0.1") || value.includes("localhost");
+}
+
 export function appUrl() {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.AUTH_URL ||
-    "http://127.0.0.1:43127"
-  );
+  for (const candidate of [process.env.NEXT_PUBLIC_APP_URL, process.env.AUTH_URL]) {
+    const value = candidate?.trim();
+    if (!value || isLoopback(value)) continue;
+    return stripTrailingSlash(value);
+  }
+
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl && !isLoopback(vercelUrl)) {
+    return stripTrailingSlash(`https://${vercelUrl}`);
+  }
+
+  return LOCAL_APP_URL;
 }
 
 export function isDemoMode() {
