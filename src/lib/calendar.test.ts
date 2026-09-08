@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TIMEZONE,
+  clientVisitLabel,
+  durationMinutes,
   expandAvailabilitySlots,
+  formatDuration,
+  groupByDay,
+  halfHourOptions,
   isSlotOpen,
   openSlots,
+  parseAvailabilityWindow,
+  splitSlots,
+  timezoneLabel,
   zonedParts,
 } from "./calendar";
 
@@ -121,5 +129,126 @@ describe("isSlotOpen — the booking gate", () => {
       ok: false,
       reason: "already_booked",
     });
+  });
+});
+
+describe("day grouping (TOK-33 C1/C10)", () => {
+  const at = (iso: string) => ({ startsAt: new Date(iso) });
+
+  it("buckets by the practice's day, not the server's UTC day", () => {
+    // 21:00 EDT Mon and 00:30 UTC are the same evening in New York, one UTC day apart.
+    const groups = groupByDay(
+      [at("2026-09-08T01:00:00Z"), at("2026-09-08T01:30:00Z"), at("2026-09-08T14:00:00Z")],
+      DEFAULT_TIMEZONE,
+      new Date("2026-09-01T12:00:00Z"),
+    );
+
+    expect(groups.map((group) => group.key)).toEqual(["2026-09-07", "2026-09-08"]);
+    expect(groups.map((group) => group.items.length)).toEqual([2, 1]);
+  });
+
+  it("labels today and tomorrow relative to the practice's clock", () => {
+    // 22:00 EDT Wed — already Thursday in UTC, still Wednesday for the family.
+    const now = new Date("2026-09-10T02:00:00Z");
+    const groups = groupByDay(
+      [at("2026-09-10T03:00:00Z"), at("2026-09-10T18:00:00Z"), at("2026-09-11T18:00:00Z")],
+      DEFAULT_TIMEZONE,
+      now,
+    );
+
+    expect(groups.map((group) => group.label)).toEqual([
+      "Today",
+      "Tomorrow",
+      "Friday, Sep 11",
+    ]);
+  });
+
+  it("keeps the caller's order inside each day", () => {
+    const groups = groupByDay(
+      [at("2026-09-07T14:00:00Z"), at("2026-09-07T15:00:00Z")],
+      DEFAULT_TIMEZONE,
+      new Date("2026-09-01T12:00:00Z"),
+    );
+    expect(groups[0].items.map((item) => item.startsAt.toISOString())).toEqual([
+      "2026-09-07T14:00:00.000Z",
+      "2026-09-07T15:00:00.000Z",
+    ]);
+  });
+});
+
+describe("splitSlots — 'More times'", () => {
+  const slots = [1, 2, 3, 4, 5, 6, 7];
+
+  it("shows five and hides the rest by default", () => {
+    expect(splitSlots(slots)).toEqual({ visible: [1, 2, 3, 4, 5], more: [6, 7] });
+  });
+
+  it("hides nothing when the day list is already short", () => {
+    expect(splitSlots([1, 2])).toEqual({ visible: [1, 2], more: [] });
+  });
+});
+
+describe("visit card details (TOK-33 C4/C14)", () => {
+  it("reports duration in the units a family plans around", () => {
+    expect(formatDuration(45)).toBe("45 min");
+    expect(formatDuration(60)).toBe("1 hr");
+    expect(formatDuration(90)).toBe("1 hr 30 min");
+  });
+
+  it("measures duration from the event's own start and end", () => {
+    expect(
+      durationMinutes(new Date("2026-09-07T14:00:00Z"), new Date("2026-09-07T14:45:00Z")),
+    ).toBe(45);
+  });
+
+  it("names the clock so a time is never ambiguous", () => {
+    expect(timezoneLabel(new Date("2026-09-07T14:00:00Z"))).toBe("EDT");
+    expect(timezoneLabel(new Date("2026-01-07T14:00:00Z"))).toBe("EST");
+  });
+
+  it("softens scheduling jargon families never asked for", () => {
+    expect(clientVisitLabel({ title: "Fit consult", type: "consult" })).toBe(
+      "Introductory consult",
+    );
+    expect(clientVisitLabel({ title: "Prenatal visit", type: "visit" })).toBe("Prenatal visit");
+    expect(clientVisitLabel({ title: "", type: "consult" })).toBe("Introductory consult");
+  });
+});
+
+describe("availability windows (TOK-33 C8)", () => {
+  it("offers half-hour choices, not raw hours", () => {
+    const options = halfHourOptions(0, 23 * 60 + 30);
+    expect(options).toHaveLength(48);
+    expect(options[0]).toEqual({ value: 0, label: "12:00 AM" });
+    expect(options[19]).toEqual({ value: 570, label: "9:30 AM" });
+    expect(options.at(-1)).toEqual({ value: 1410, label: "11:30 PM" });
+  });
+
+  it("lets an end window reach midnight", () => {
+    expect(halfHourOptions(30, 24 * 60).at(-1)).toEqual({ value: 1440, label: "Midnight" });
+  });
+
+  it("accepts a clean half-hour window from the form", () => {
+    expect(parseAvailabilityWindow("570", "960")).toEqual({
+      startMinutes: 570,
+      endMinutes: 960,
+    });
+  });
+
+  it("drops windows the calendar could never expand", () => {
+    expect(parseAvailabilityWindow("960", "570")).toBeNull(); // inverted
+    expect(parseAvailabilityWindow("600", "600")).toBeNull(); // empty
+    expect(parseAvailabilityWindow("605", "960")).toBeNull(); // off the half-hour grid
+    expect(parseAvailabilityWindow("-60", "960")).toBeNull();
+    expect(parseAvailabilityWindow("600", "1500")).toBeNull(); // past midnight
+    expect(parseAvailabilityWindow("", "960")).toBeNull();
+    expect(parseAvailabilityWindow("ten", "960")).toBeNull();
+  });
+
+  it("round-trips a saved window back into the select's options", () => {
+    const window = parseAvailabilityWindow("570", "1440");
+    expect(window).not.toBeNull();
+    const values = halfHourOptions(30, 24 * 60).map((option) => option.value);
+    expect(values).toContain(window!.endMinutes);
   });
 });

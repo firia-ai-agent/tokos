@@ -12,10 +12,11 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   SLOT_REJECTION_MESSAGES,
-  formatSlot,
   listOpenSlots,
+  organizationTimezone,
   type SlotRejection,
 } from "@/lib/calendar";
+import { SlotPicker } from "@/components/brand/slot-picker";
 
 export const dynamic = "force-dynamic";
 
@@ -46,10 +47,15 @@ export default async function BookConsultPage({
     .limit(1);
   if (!row) notFound();
 
+  const now = new Date();
   const slots = await listOpenSlots({
     organizationId: row.profile.organizationId,
     userId: row.profile.userId,
+    from: now,
   });
+  // The practice's clock, not the server's — a visitor booking from Denver still reads
+  // the window in the zone the doula keeps (TOK-33 C12).
+  const timeZone = await organizationTimezone(row.profile.organizationId);
   const error = bookingError(query.error);
   const firstName = row.user.name.trim().split(/\s+/)[0];
 
@@ -109,20 +115,7 @@ export default async function BookConsultPage({
                   <Label htmlFor="edd">Estimated due date</Label>
                   <Input id="edd" name="edd" type="date" />
                 </div>
-                <fieldset className="space-y-2">
-                  <legend className="text-sm font-medium">Open times</legend>
-                  {slots.slice(0, 12).map((slot) => (
-                    <label key={slot.startsAt.toISOString()} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="slot"
-                        value={`${slot.startsAt.toISOString()}|${slot.endsAt.toISOString()}`}
-                        required
-                      />
-                      {formatSlot(slot.startsAt)}
-                    </label>
-                  ))}
-                </fieldset>
+                <SlotPicker slots={slots} timeZone={timeZone} now={now} />
                 <Button type="submit" className="w-full">
                   Request this consult
                 </Button>

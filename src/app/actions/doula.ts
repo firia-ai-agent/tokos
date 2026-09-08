@@ -12,6 +12,7 @@ import {
   startActiveCare,
   startFit,
 } from "@/lib/funnel";
+import { parseAvailabilityWindow } from "@/lib/calendar";
 import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
 import { requireStaff, requireStaffClient } from "@/lib/tenancy";
@@ -139,13 +140,21 @@ export async function saveAvailabilityAction(formData: FormData) {
   const days = [1, 2, 3, 4, 5, 6, 0];
   for (const weekday of days) {
     if (formData.get(`day-${weekday}`) !== "on") continue;
+    // The form now posts minutes from half-hour selects (TOK-33 C8). A window that does
+    // not parse is dropped rather than stored inverted — `expandAvailabilitySlots` would
+    // silently emit nothing for it, and a doula would never learn why.
+    const window = parseAvailabilityWindow(
+      formData.get(`start-${weekday}`),
+      formData.get(`end-${weekday}`),
+    );
+    if (!window) continue;
     await db.insert(availability).values({
       id: newId(),
       organizationId: staff.organizationId,
       userId: staff.userId,
       weekday,
-      startMinutes: Number(formData.get(`start-${weekday}`) ?? 10) * 60,
-      endMinutes: Number(formData.get(`end-${weekday}`) ?? 16) * 60,
+      startMinutes: window.startMinutes,
+      endMinutes: window.endMinutes,
     });
   }
   revalidatePath("/doula/calendar");
