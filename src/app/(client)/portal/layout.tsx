@@ -1,6 +1,10 @@
+import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { getDb } from "@/db";
+import { organizations } from "@/db/schema";
 import { AppShell } from "@/components/brand/shell";
+import type { ShellNavGroup } from "@/components/brand/shell-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -15,17 +19,53 @@ const nav = [
   { href: "/portal/profile", label: "Profile" },
 ];
 
+const navGroups: ShellNavGroup[] = [
+  {
+    label: "Care",
+    items: [
+      { href: "/portal", label: "Home" },
+      { href: "/portal/forms", label: "Forms" },
+      { href: "/portal/resources", label: "Resources" },
+      { href: "/portal/messages", label: "Messages" },
+      { href: "/portal/calendar", label: "Consults" },
+    ],
+  },
+  {
+    label: "Agreement",
+    items: [
+      { href: "/portal/contract", label: "Agreement" },
+      { href: "/portal/pay", label: "Pay" },
+    ],
+  },
+  {
+    label: "You",
+    items: [{ href: "/portal/profile", label: "Profile" }],
+  },
+];
+
 export default async function ClientLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user || session.user.actorType !== "client") redirect("/login");
+
+  const db = getDb();
+  const [org] = await db
+    .select({ portalName: organizations.portalName, name: organizations.name })
+    .from(organizations)
+    .where(eq(organizations.id, session.user.organizationId ?? ""))
+    .limit(1);
+
+  const portalLabel = org?.portalName ?? org?.name ?? "NOVA Birth Prep";
+
   return (
     <AppShell
       brand="Tokos"
-      brandHint="NOVA Birth Prep"
+      brandHint={portalLabel}
       personName={session.user.name ?? "Client"}
-      personMeta="Your care portal"
+      personMeta={`Client · ${portalLabel}`}
       nav={nav}
+      navGroups={navGroups}
       tone="client"
+      newHref="/portal/forms"
     >
       {children}
     </AppShell>

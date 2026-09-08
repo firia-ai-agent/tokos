@@ -381,3 +381,80 @@ export async function listOrgClients(organizationId: string, doulaUserId: string
       ),
     );
 }
+
+/** Lightweight attention list for shell notifications — real ledger/pipeline only. */
+export async function shellAttention(organizationId: string, doulaUserId: string) {
+  const db = getDb();
+  const myClients = await db
+    .select({
+      client: clients,
+      stage: pipelineStages.stage,
+    })
+    .from(clients)
+    .innerJoin(pipelineStages, eq(pipelineStages.clientId, clients.id))
+    .innerJoin(assignments, eq(assignments.clientId, clients.id))
+    .where(
+      and(
+        eq(clients.organizationId, organizationId),
+        eq(assignments.userId, doulaUserId),
+        eq(assignments.status, "active"),
+      ),
+    );
+
+  const clientIds = myClients.map((row) => row.client.id);
+  if (clientIds.length === 0) return { count: 0, items: [] as HomeAttention[] };
+
+  const myInvoices = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.organizationId, organizationId), inArray(invoices.clientId, clientIds)));
+  const myContracts = await db
+    .select()
+    .from(contracts)
+    .where(and(eq(contracts.organizationId, organizationId), inArray(contracts.clientId, clientIds)));
+
+  const nameOf = (id: string) =>
+    myClients.find((row) => row.client.id === id)?.client.displayName ?? "Family";
+
+  const items: HomeAttention[] = [];
+
+  for (const contract of myContracts.filter((c) => c.status !== "voided" && !c.signedAt).slice(0, 3)) {
+    items.push({
+      id: `contract-${contract.id}`,
+      title: `Agreement waiting — ${nameOf(contract.clientId)}`,
+      detail: `${formatCents(contract.amountCents)} · not signed`,
+      href: `/doula/clients/${contract.clientId}`,
+      cta: "Open",
+    });
+  }
+
+  for (const invoice of myInvoices.filter((inv) => inv.status === "open").slice(0, 3)) {
+    items.push({
+      id: `invoice-${invoice.id}`,
+      title: `Open invoice — ${nameOf(invoice.clientId)}`,
+      detail: formatCents(invoice.amountCents),
+      href: "/doula/invoices",
+      cta: "Review",
+    });
+  }
+
+  for (const row of myClients
+    .filter((r) =>
+      ["new_lead", "intro", "fit", "agreement_signed"].includes(r.stage),
+    )
+    .slice(0, 3)) {
+    items.push({
+      id: `stage-${row.client.id}`,
+      title: `${row.client.displayName} · ${stageLabel(row.stage)}`,
+      detail: "Keep intake moving",
+      href: `/doula/clients/${row.client.id}`,
+      cta: "Open",
+    });
+  }
+
+  const unique = items
+    .filter((item, index, arr) => arr.findIndex((other) => other.id === item.id) === index)
+    .slice(0, 5);
+
+  return { count: unique.length, items: unique };
+}
