@@ -29,6 +29,12 @@ import {
   resources,
   users,
 } from "../src/db/schema";
+import {
+  DEMO_ACCOUNTS,
+  DEMO_PASSWORD,
+  demoAccount,
+  demoLoginHintLines,
+} from "../src/lib/demo-logins";
 import { saveProviderPhoto } from "../src/lib/provider-photo";
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
@@ -42,7 +48,16 @@ const CEDAR_ORG_ID = "11111111-1111-4111-8111-111111111112";
 const CEDAR_STAFF_ID = "22222222-2222-4222-8222-222222222223";
 const CEDAR_CLIENT_USER_ID = "33333333-3333-4333-8333-333333333336";
 const CEDAR_CLIENT_ID = "44444444-4444-4444-8444-444444444446";
-const DEMO_PASSWORD = "tokos-demo";
+/**
+ * Who the demo signs in as lives in `src/lib/demo-logins.ts`, so the seed, the login
+ * hint, and the README cannot disagree about which of these two doulas is the founder.
+ */
+const MAYA = demoAccount("maya");
+const PRIYA = demoAccount("priya");
+const JORDAN = demoAccount("jordan");
+const AVERY = demoAccount("avery");
+const SAM = demoAccount("sam");
+const RILEY = demoAccount("riley");
 const NOVA_PRIMARY = "#0F6E56";
 const CEDAR_PRIMARY = "#5C4A3A";
 
@@ -132,41 +147,41 @@ async function main() {
   await db.insert(users).values([
     {
       id: DOULA_ID,
-      email: "maya@novabirthpartners.com",
-      name: "Maya Chen",
+      email: MAYA.email,
+      name: MAYA.name,
       passwordHash,
       credentialsLabel: "CD(DONA)",
     },
     {
       id: CLIENT_USER_ID,
-      email: "jordan.rivera@example.com",
-      name: "Jordan Rivera",
+      email: JORDAN.email,
+      name: JORDAN.name,
       passwordHash,
     },
     {
       id: PRIYA_USER_ID,
-      email: "priya@novabirthpartners.com",
-      name: "Priya Raman",
+      email: PRIYA.email,
+      name: PRIYA.name,
       passwordHash,
       credentialsLabel: "CD(DONA), CLC",
     },
     {
       id: AVERY_USER_ID,
-      email: "avery.kim@example.com",
-      name: "Avery Kim",
+      email: AVERY.email,
+      name: AVERY.name,
       passwordHash,
     },
     {
       id: CEDAR_STAFF_ID,
-      email: "sam@cedarbirth.co",
-      name: "Sam Ortega",
+      email: SAM.email,
+      name: SAM.name,
       passwordHash,
       credentialsLabel: "CD(DONA)",
     },
     {
       id: CEDAR_CLIENT_USER_ID,
-      email: "riley.voss@example.com",
-      name: "Riley Voss",
+      email: RILEY.email,
+      name: RILEY.name,
       passwordHash,
     },
   ]);
@@ -217,7 +232,7 @@ async function main() {
   await seedProviderPhoto({
     organizationId: ORG_ID,
     userId: DOULA_ID,
-    name: "Maya Chen",
+    name: MAYA.name,
     photoFile: "maya-chen.jpg",
   });
 
@@ -227,9 +242,9 @@ async function main() {
   await db.insert(clients).values({
     id: CLIENT_ID,
     organizationId: ORG_ID,
-    displayName: "Jordan Rivera",
+    displayName: JORDAN.name,
     preferredName: "Jordan",
-    email: "jordan.rivera@example.com",
+    email: JORDAN.email,
     phone: "(571) 555-0199",
     source: "web",
     edd: edd.toISOString().slice(0, 10),
@@ -288,7 +303,7 @@ async function main() {
     organizationId: ORG_ID,
     clientId: CLIENT_ID,
     userId: CLIENT_USER_ID,
-    email: "jordan.rivera@example.com",
+    email: JORDAN.email,
     status: "active",
     inviteSentAt: new Date(),
   });
@@ -377,9 +392,9 @@ async function main() {
   await db.insert(clients).values({
     id: AVERY_CLIENT_ID,
     organizationId: ORG_ID,
-    displayName: "Avery Kim",
+    displayName: AVERY.name,
     preferredName: "Avery",
-    email: "avery.kim@example.com",
+    email: AVERY.email,
     phone: "(571) 555-0144",
     source: "web",
     edd: averyEdd.toISOString().slice(0, 10),
@@ -439,7 +454,7 @@ async function main() {
     organizationId: ORG_ID,
     clientId: AVERY_CLIENT_ID,
     userId: AVERY_USER_ID,
-    email: "avery.kim@example.com",
+    email: AVERY.email,
     status: "active",
     inviteSentAt: new Date(),
   });
@@ -775,15 +790,15 @@ async function main() {
   await seedProviderPhoto({
     organizationId: CEDAR_ORG_ID,
     userId: CEDAR_STAFF_ID,
-    name: "Sam Ortega",
+    name: SAM.name,
     photoFile: "sam-ortega.jpg",
   });
   await db.insert(clients).values({
     id: CEDAR_CLIENT_ID,
     organizationId: CEDAR_ORG_ID,
-    displayName: "Riley Voss",
+    displayName: RILEY.name,
     preferredName: "Riley",
-    email: "riley.voss@example.com",
+    email: RILEY.email,
     source: "web",
     city: "Richmond",
     region: "VA",
@@ -807,22 +822,22 @@ async function main() {
     organizationId: CEDAR_ORG_ID,
     clientId: CEDAR_CLIENT_ID,
     userId: CEDAR_CLIENT_USER_ID,
-    email: "riley.voss@example.com",
+    email: RILEY.email,
     status: "active",
     inviteSentAt: new Date(),
   });
 
+  // Same lines the login page shows, so a smoke test cannot be sent to the wrong shell.
+  const logins = demoLoginHintLines()
+    .map((line) => `  ${line}`)
+    .join("\n");
+  const roster = DEMO_ACCOUNTS.map(
+    (account) => `  ${account.name.padEnd(13)} ${account.email} / ${DEMO_PASSWORD}\n           ${account.note}`,
+  ).join("\n");
   console.log(`Seeded NOVA Birth Partners + Cedar tenant.
-  Doula:   maya@novabirthpartners.com / ${DEMO_PASSWORD} (owner)
-  Doula:   priya@novabirthpartners.com / ${DEMO_PASSWORD} (accepted second doula — TOK-41)
-           role=doula, so she gets the minimal doula shell (TOK-34): no Team, no Brand,
-           no Email templates in nav or search; "Your families" instead of "Pipeline";
-           backup on Avery, so her list has exactly one family while Maya's owner board
-           is org-wide
-  Client:  jordan.rivera@example.com / ${DEMO_PASSWORD}
-  Client:  avery.kim@example.com / ${DEMO_PASSWORD}
-  Cedar staff: sam@cedarbirth.co / ${DEMO_PASSWORD} (owner of Cedar — must not reach NOVA clients)
-  Cedar:   riley.voss@example.com / ${DEMO_PASSWORD} (other org — Maya must not see)
+${logins}
+
+${roster}
   Cedar client id: ${CEDAR_CLIENT_ID}
   Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25)
   Pipeline: Jordan on fit, Avery on intro — two clients in two places, not a column of leads

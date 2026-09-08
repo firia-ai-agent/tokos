@@ -14,6 +14,7 @@ import {
   shellPersona,
   shellSearchTargets,
 } from "./shell-persona";
+import { demoAccount } from "./demo-logins";
 
 const AGENCY_ONLY = ["/doula/team", "/doula/settings", "/doula/settings/email"];
 
@@ -40,6 +41,20 @@ describe("shell persona (TOK-34 D1)", () => {
     const hrefs = shellNavItems("agency", "NOVA Birth Partners").map((item) => item.href);
     expect(hrefs).toContain("/doula/team");
     expect(hrefs).toContain("/doula/settings");
+  });
+
+  it("puts no agency word on a doula's rail, whatever the href is", () => {
+    // Priya's real membership row, not a hand-written "doula" — the founder complaint was
+    // about what she sees after signing in, and the role is what decides it.
+    const persona = shellPersona(demoAccount("priya").membershipRole);
+    expect(persona).toBe("doula");
+    const groups = shellNavGroups(persona, "NOVA Birth Partners");
+    expect(groups[0]?.label).toBe("My practice");
+    const words = groups.flatMap((group) => [group.label, ...group.items.map((i) => i.label)]);
+    for (const word of ["Team", "Settings", "Pipeline", "NOVA", "Brand"]) {
+      expect(words).not.toContain(word);
+    }
+    expect(clientsHeading(persona)).toBe("Your families");
   });
 
   it("never renders an empty nav group", () => {

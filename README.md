@@ -53,12 +53,14 @@ npm run dev
 
 App: [http://127.0.0.1:43127](http://127.0.0.1:43127)
 
-Demo logins after seed (password `tokos-demo`):
+Demo logins after seed (password `tokos-demo`). The accounts, and which shell each one
+lands in, live in `src/lib/demo-logins.ts` — the login page and the seed footer both print
+this same list:
 
-| Role | Email | Notes |
+| Sign in as | Email | Notes |
 | --- | --- | --- |
-| Doula / owner | `maya@novabirthpartners.com` | Sees Jordan **and** Avery (NOVA). Owner ⇒ **agency shell** |
-| Doula / member | `priya@novabirthpartners.com` | Role `doula` ⇒ **minimal doula shell** (TOK-34). Backup on Avery |
+| **Founder · agency shell** | `maya@novabirthpartners.com` | Maya Chen, role `owner`. Sees Jordan **and** Avery (NOVA), plus Team / Settings / Pipeline |
+| **Doula shell** | `priya@novabirthpartners.com` | Priya Raman, role `doula` ⇒ **minimal doula shell** (TOK-34). Backup on Avery. Sign in as her, not Maya, to smoke-test the doula shell |
 | Client | `jordan.rivera@example.com` | Primary happy-path client |
 | Client | `avery.kim@example.com` | Second NOVA client at `new_lead` |
 | Other-org client | `riley.voss@example.com` | Cedar Birth Collective — Maya must not see |

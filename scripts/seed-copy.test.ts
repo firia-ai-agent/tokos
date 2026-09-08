@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DEMO_ACCOUNTS, demoAccount, demoLoginHintLines } from "../src/lib/demo-logins";
 
 /**
  * The seed is copy as much as it is data: its resource bodies and email templates are the
@@ -49,7 +50,7 @@ describe("seeded client copy", () => {
 
 describe("seeded roster (TOK-34 D8)", () => {
   it("keeps a second doula whose role is not owner, so the doula shell is reachable", () => {
-    expect(seed).toContain("priya@novabirthpartners.com");
+    expect(demoAccount("priya").email).toBe("priya@novabirthpartners.com");
     // The membership that makes her a `doula` rather than another owner is the whole
     // point — without it there is nobody to sign in as and see the minimal shell.
     expect(seed).toMatch(/userId: PRIYA_USER_ID,\n\s+role: "doula",/);
@@ -60,6 +61,14 @@ describe("seeded roster (TOK-34 D8)", () => {
   });
 
   it("prints how to sign in as her when the seed finishes", () => {
-    expect(seed).toContain("priya@novabirthpartners.com / ${DEMO_PASSWORD}");
+    // The footer is built from the shared roster, so it cannot drift from the login page.
+    expect(seed).toContain("demoLoginHintLines()");
+    expect(demoLoginHintLines().join("\n")).toContain("priya@novabirthpartners.com");
+  });
+
+  it("takes every seeded identity from the shared roster rather than retyping it", () => {
+    for (const account of DEMO_ACCOUNTS) {
+      expect(seed).not.toContain(`"${account.email}"`);
+    }
   });
 });

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { DEMO_PASSWORD, demoLoginGroups } from "@/lib/demo-logins";
 
 export default async function LoginPage({
   searchParams,
@@ -31,7 +32,7 @@ export default async function LoginPage({
         <Card>
           <CardHeader>
             <CardTitle>Email and password</CardTitle>
-            <CardDescription>Demo logins are printed in the README after seed.</CardDescription>
+            <CardDescription>Demo logins are listed below and printed by the seed.</CardDescription>
           </CardHeader>
           <CardContent>
             <form action={loginAction} className="space-y-4">
@@ -55,10 +56,15 @@ export default async function LoginPage({
             </form>
           </CardContent>
         </Card>
-        <p className="text-xs text-muted-foreground">
-          Doula: maya@novabirthpartners.com · Clients: jordan.rivera@example.com,
-          avery.kim@example.com · password tokos-demo
-        </p>
+        <div className="space-y-1 text-xs text-muted-foreground">
+          {demoLoginGroups().map((group) => (
+            <p key={group.label}>
+              <span className="font-medium text-teal-ink">{group.label}:</span>{" "}
+              {group.accounts.map((account) => account.email).join(", ")}
+            </p>
+          ))}
+          <p>password {DEMO_PASSWORD}</p>
+        </div>
       </div>
     </div>
   );
