@@ -171,16 +171,21 @@ export async function coCompleteFormAction(formData: FormData) {
   revalidatePath("/doula");
 }
 
-export async function remindFormsAction(clientId: string, email: string, name: string) {
-  const staff = await requireStaff();
+/**
+ * Server actions are reachable by direct POST, so the recipient never comes from the caller:
+ * the client must belong to the staff org, and the address/name are read from that row.
+ */
+export async function remindFormsAction(clientId: string) {
+  if (!clientId) return;
+  const { staff, client } = await requireStaffClient(clientId);
   await enqueueEmail({
     organizationId: staff.organizationId,
     triggerKey: "form_reminder",
-    toEmail: email,
+    toEmail: client.email,
     vars: {
-      client_name: name,
+      client_name: client.preferredName ?? client.displayName,
       portal_url: `${appUrl()}/portal`,
     },
   });
-  void clientId;
+  revalidatePath(`/doula/clients/${client.id}`);
 }

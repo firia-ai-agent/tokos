@@ -60,11 +60,18 @@ export async function createCheckoutSession(input: {
 export async function retrieveCheckoutSession(sessionId: string) {
   if (!hasStripe()) {
     const failed = /fail|cancel/i.test(sessionId);
-    return { paid: !failed, metadata: {} as Record<string, string> };
+    return {
+      paid: !failed,
+      metadata: {} as Record<string, string>,
+      amountTotalCents: null as number | null,
+      currency: null as string | null,
+    };
   }
   const session = await client().checkout.sessions.retrieve(sessionId);
   return {
     paid: session.payment_status === "paid",
     metadata: (session.metadata ?? {}) as Record<string, string>,
+    amountTotalCents: session.amount_total,
+    currency: session.currency,
   };
 }

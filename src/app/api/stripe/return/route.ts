@@ -6,9 +6,11 @@ import { markInvoicePaid } from "@/lib/funnel";
 import { auth } from "@/auth";
 import { hasStripe } from "@/lib/env";
 import { clientOwnsRow } from "@/lib/ownership";
+import { checkoutBindingError } from "@/lib/payment";
 
 /**
- * Stripe Checkout return. Bare `?invoiceId=` never marks paid (TOK-21).
+ * Stripe Checkout return. Bare `?invoiceId=` never marks paid, and a `session_id` only
+ * settles the invoice its own metadata names, for that amount and currency (TOK-21).
  * Demo stub pay completes only from the authenticated /stub/pay form.
  */
 export async function GET(request: Request) {
@@ -42,7 +44,11 @@ export async function GET(request: Request) {
   }
 
   const checkout = await retrieveCheckoutSession(sessionId);
-  if (!checkout.paid) {
+  const binding = checkoutBindingError(checkout, invoice);
+  if (binding === "mismatch") {
+    return Response.redirect(new URL("/portal/pay?unpaid=1&result=unverified", request.url));
+  }
+  if (binding === "unpaid") {
     return Response.redirect(new URL("/portal/pay?unpaid=1", request.url));
   }
 
