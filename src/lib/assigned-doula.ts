@@ -45,6 +45,44 @@ const PRECEDENCE: Record<DoulaCandidate["source"], number> = {
   assignment: 1,
 };
 
+/** An active `assignments` row, reduced to what deciding "who is the primary" needs. */
+export type AssignmentRow = {
+  userId: string;
+  role: string;
+  createdAt?: Date | string | null;
+};
+
+/**
+ * Which active assignment is *the* one (TOK-67).
+ *
+ * A family can have a primary and a backup on her at once, so "take the first active row"
+ * is not a rule, it is a coin toss — Postgres returns an unordered `limit(1)` in whatever
+ * order it likes. `sendContract` used to settle the engagement's `primaryDoulaUserId`
+ * that way, and because the engagement outranks the assignment in `pickAssignedDoula`,
+ * one coin toss re-pointed the family's portal at the backup: her name, her headshot, her
+ * thread header. A family met Priya and then saw Maya's face.
+ *
+ * So the rule is written down once, here, and both the read path above and the write path
+ * in the funnel use it: the row that says `primary` wins, and the most recent one breaks a
+ * tie, because the last person put on a family is the current answer.
+ */
+export function pickPrimaryAssignment<T extends AssignmentRow>(
+  rows: readonly T[],
+): T | null {
+  const ranked = [...rows].sort(
+    (a, b) =>
+      Number(b.role === "primary") - Number(a.role === "primary") ||
+      assignedAt(b) - assignedAt(a),
+  );
+  return ranked[0] ?? null;
+}
+
+function assignedAt(row: AssignmentRow): number {
+  if (!row.createdAt) return 0;
+  const date = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
 function firstNameOf(name: string): string {
   return name.trim().split(/\s+/)[0] ?? name;
 }
@@ -125,6 +163,7 @@ export const resolveAssignedDoulaName = cache(async function resolveAssignedDoul
       userId: assignments.userId,
       name: users.name,
       role: assignments.role,
+      createdAt: assignments.createdAt,
     })
     .from(assignments)
     .innerJoin(users, eq(users.id, assignments.userId))
@@ -142,18 +181,19 @@ export const resolveAssignedDoulaName = cache(async function resolveAssignedDoul
     .where(eq(organizations.id, organizationId))
     .limit(1);
 
+  const chosen = pickPrimaryAssignment(assignmentRows);
+  const primary = chosen ? [chosen] : [];
+
   const candidates: DoulaCandidate[] = [
     ...engagementRows.map((row) => ({ ...row, source: "engagement" as const })),
-    // A co-doula is still on the family's team, but the primary is who the portal names.
-    ...assignmentRows
-      .slice()
-      .sort((a, b) => Number(b.role === "primary") - Number(a.role === "primary"))
-      .map((row) => ({
-        organizationId: row.organizationId,
-        userId: row.userId,
-        name: row.name,
-        source: "assignment" as const,
-      })),
+    // A co-doula is still on the family's team, but the primary is who the portal names,
+    // by the same rule the funnel writes the engagement with (TOK-67).
+    ...primary.map((row) => ({
+      organizationId: row.organizationId,
+      userId: row.userId,
+      name: row.name,
+      source: "assignment" as const,
+    })),
   ];
 
   return pickAssignedDoula({
@@ -162,3 +202,32 @@ export const resolveAssignedDoulaName = cache(async function resolveAssignedDoul
     portalName: org?.portalName ?? org?.name ?? null,
   });
 });
+
+/**
+ * The user id of the family's primary doula, org-scoped, or null when nobody is on her.
+ *
+ * The funnel writes `engagements.primaryDoulaUserId` from this, so the row that decides
+ * whose face the portal shows is settled by the rule above rather than by an unordered
+ * `limit(1)` (TOK-67).
+ */
+export async function resolvePrimaryAssignedUserId(input: {
+  organizationId: string;
+  clientId: string;
+}): Promise<string | null> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      userId: assignments.userId,
+      role: assignments.role,
+      createdAt: assignments.createdAt,
+    })
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.organizationId, input.organizationId),
+        eq(assignments.clientId, input.clientId),
+        eq(assignments.status, "active"),
+      ),
+    );
+  return pickPrimaryAssignment(rows)?.userId ?? null;
+}

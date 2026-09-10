@@ -38,6 +38,7 @@ import {
   type PipelineStageName,
 } from "@/lib/pipeline";
 import { AI_NOTE_SOURCES, type AiNoteSource } from "@/lib/lead-fields";
+import { resolvePrimaryAssignedUserId } from "@/lib/assigned-doula";
 import { paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
 import { openPaymentStatus, setPaymentStatusForInvoice } from "@/lib/payment-status";
 import { dueDateFrom, invoiceNumberPrefix, nextInvoiceNumber } from "@/lib/invoice-dashboard";
@@ -276,11 +277,15 @@ export async function sendContract(input: {
     .limit(1);
   if (!client) throw new Error("Client not found");
 
-  const [assignment] = await db
-    .select()
-    .from(assignments)
-    .where(and(eq(assignments.clientId, input.clientId), eq(assignments.status, "active")))
-    .limit(1);
+  // Whose face the family sees follows from this row: the engagement's primary outranks
+  // the assignment in `pickAssignedDoula`, so writing the wrong one here re-points her
+  // portal, her thread header and her care card at somebody she has never met (TOK-67).
+  // It used to be an unordered `limit(1)` over every active assignment, org-unscoped —
+  // a family with a primary and a backup got whichever row Postgres felt like returning.
+  const primaryDoulaUserId = await resolvePrimaryAssignedUserId({
+    organizationId: input.organizationId,
+    clientId: input.clientId,
+  });
 
   const packageLabel = input.packageLabel ?? "Birth support package";
   const amountCents = input.amountCents ?? 280000;
@@ -300,7 +305,7 @@ export async function sendContract(input: {
       packageLabel,
       amountCents,
       targetDate: client.edd,
-      primaryDoulaUserId: assignment?.userId,
+      primaryDoulaUserId,
       status: "open",
     });
   }
