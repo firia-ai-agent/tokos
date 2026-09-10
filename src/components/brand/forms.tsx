@@ -23,7 +23,7 @@ export function SensitiveBadge() {
 export function PhiNote({ className }: { className?: string }) {
   return (
     <p className={cn("text-[12px] text-muted-foreground", className)}>
-      Answers stay in the portal. Reminder emails carry only a name, a link, and a count.
+      Your answers stay here. Reminders never include what you wrote.
     </p>
   );
 }

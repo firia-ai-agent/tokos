@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 const nav = [
   { href: "/portal", label: "Home" },
   { href: "/portal/forms", label: "Forms" },
+  { href: "/portal/passport", label: "Preferences" },
   { href: "/portal/resources", label: "Resources" },
   { href: "/portal/contract", label: "Agreement" },
   { href: "/portal/pay", label: "Pay" },
@@ -24,6 +25,7 @@ const navGroups: ShellNavGroup[] = [
     items: [
       { href: "/portal", label: "Home" },
       { href: "/portal/forms", label: "Forms" },
+      { href: "/portal/passport", label: "Preferences" },
       { href: "/portal/resources", label: "Resources" },
       { href: "/portal/messages", label: "Messages" },
       { href: "/portal/calendar", label: "Visits" },

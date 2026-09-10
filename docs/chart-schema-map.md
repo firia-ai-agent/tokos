@@ -1,8 +1,9 @@
-# Chart schema map (TOK-44)
+# Chart schema map (TOK-44 / TOK-45)
 
 What NOVA fills in Dubsado today, and where each answer lands in Tokos. Schema, field
-definitions and rules only — the charting UI is TOK-43 and the share/ACL APIs are TOK-45,
-neither of which exists yet.
+definitions and rules only — the charting UI was TOK-43, which is canceled. The ACL, the
+share mutations and the family-facing slice landed in TOK-45; see **Faith ACL locks
+(TOK-45)** below for who may open a row and what a family may read.
 
 Ground truth for the field lists is the live portal inventory:
 
@@ -22,6 +23,9 @@ fields are on the form a doula fills tonight, so they ship, staff-only.
 | `src/lib/chart/schemas.ts` | Zod validators derived from those defs — `draft` and `signed` modes |
 | `src/lib/chart/share-policy.ts` | The share policy values, the defaults, and what a client may ever see |
 | `src/lib/chart/audit-actions.ts` | The chart `action` / `entity_type` strings for `audit_logs` |
+| `src/lib/chart/acl.ts` | TOK-45: who may read/write/share/export a row, and break-glass |
+| `src/lib/chart/access.ts` | TOK-45: the enforced loaders, the share mutation, the audit writes |
+| `src/lib/chart/passport.ts` | TOK-45: the client-visible projection `/portal/passport` renders |
 | `src/db/schema.ts` | `visit_notes`, `birth_logs`, `care_plans` |
 
 Labels and keys live in `field-defs` and nowhere else. A page, query, seed or fixture that
@@ -85,21 +89,64 @@ outcome this schema is shaped to make impossible:
 - APGAR 1 minute / 5 minute, newborn care
 
 An explicit share added in TOK-45 is a **shared summary**, never the clinical grid. TOK-45's
-share APIs must call `clientVisibleFieldKeys()` rather than re-deriving the rule.
+share APIs call `clientVisibleFieldKeys()` rather than re-deriving the rule — see
+`lib/chart/passport.ts`, which is the only thing that renders a chart answer to a family.
 
-### Faith K1 / K2 — defaults while we wait
+### Faith ACL locks (TOK-45) — Accepted via Firia, 2026-09-10
 
-These are research defaults, not Faith's answers, and they are the conservative reading:
+K1 and K2 are answered. These are not defaults any more; they are the locks, and the code
+that holds them is `src/lib/chart/acl.ts` (rules), `src/lib/chart/access.ts` (enforcement +
+audit) and `src/lib/chart/passport.ts` (the family-facing projection).
 
-- **K1 (share):** Birth Log staff-only, never client by default. Signed prenatal
-  *preferences* — the care plan — are the one document that may be shared back. No
-  dilation, APGAR or tearing to a client, ever. So `care_plans` still defaults to
-  `staff_only`; `CARE_PLAN_SHAREABLE_POLICY` is the value TOK-45 may set on a signed plan
-  once a doula chooses to, which keeps the permissive reading a decision someone makes
-  rather than one we shipped.
-- **K2 (ACL):** assigned doula plus owner/admin; on-call break-glass with a typed reason
-  and an audit row. TOK-44 ships only the `share_policy` flag and the audit vocabulary
-  (`chart.break_glass`); the APIs are TOK-45.
+**K2 — who may open a chart row (staff).** Config-driven, one grant table, no role string
+compared anywhere else:
+
+| Relationship | Read | Write | Share | Export |
+|---|---|---|---|---|
+| Assigned doula — `engagements.primaryDoulaUserId` or an active `primary` assignment | ✓ | ✓ | ✓ | ✓ |
+| Co-doula — active assignment `co` / `co_doula` / `secondary` | ✓ | ✓ | ✓ | ✓ |
+| Owner / admin — `memberships.role`, via `canManageTeam` | ✓ | ✓ | ✓ | ✓ |
+| Backup / on-call — active assignment `backup` / `on_call` | ✓ | ✓ | — | — |
+| Any other staff in the practice | break-glass only | — | — | — |
+| Another practice | — | — | — | — |
+
+- **Break-glass** stays available to other staff — a birth does not wait for a roster edit
+  — but only for `read`, only with a typed reason, and it writes `chart.break_glass` with
+  that reason in the metadata rather than `chart.viewed`. It never widens to write, share
+  or export: getting into the room is not permission to hand the room to someone else.
+- A backup reads and writes because they are the one at the birth when the primary cannot
+  be. Opening the record to the family is the primary's or the practice's call.
+- **Enforcement is in the queries and the server actions, not the UI.** `readChartRecord`
+  is org-scoped, so a row in another practice is *not found* rather than denied, and
+  `requireChartAccess` is the only supported path to a chart row from a page, an action or
+  a route handler.
+
+**K1 — what a family may read.** Signed prenatal *preferences* are open to the family; the
+clinical record is not.
+
+- A **care plan** may be moved to `preferences_shareable`, and only once it is `signed` (or
+  `amended`). `setChartSharePolicy` refuses an unsigned plan even to an owner, so a family
+  never receives something no doula stood behind. The share is deliberate, not automatic on
+  signature — the doula chooses, and `chart.shared` records that they did.
+- **Visit notes never open.** `SHAREABLE_POLICIES` lists `staff_only` and nothing else for
+  `prenatal_visit` and `postpartum_visit`. What is safe to hand a family out of a prenatal
+  visit lives in the care plan, which is why the care plan is a separate table at all.
+- **Birth Log stays `staff_only` by default** and may reach `shared_summary` and no
+  further. The policy controls the summary, never the grid:
+  `clientVisibleFieldKeys()` refuses every `clinical` field under *every* policy, including
+  the shared one. A clinical field reaching a family is **S0**. No family-facing Birth Log
+  copy is written anywhere (Vera hold, pending the portal form crawl) — a shared summary
+  renders the form's own non-clinical labels and nothing else.
+- `clientVisibleFieldKeys()` is the **only** client-side field filter. The portal page
+  (`/portal/passport`) and the client export path both go through it; a second filter would
+  be a second opinion, and one of the two would be out of date.
+
+**Audit.** Every decision lands in `audit_logs` with the existing chart vocabulary:
+`chart.access_denied` on a refusal (added in TOK-45), `chart.break_glass` when a typed
+reason opened the row, `chart.viewed` on an ordinary read — including a family reading their
+own passport — and `chart.shared` / `chart.share_revoked` / `chart.exported` written *after*
+the effect lands. Metadata carries ids, the capability, the relationship and the deny reason;
+`writeAudit`'s PHI firewall still runs over all of it.
 
 ### Dilation and station are documented as reported
 
@@ -207,10 +254,11 @@ template fills in when the inventory lands.
 
 ## Out of scope here
 
-| Not in TOK-44 | Where it lives |
+| Not in TOK-44 / TOK-45 | Where it lives |
 |---|---|
-| Chart pages, forms, the grid UI | TOK-43 |
-| Read/share/break-glass APIs, assigned-doula enforcement | TOK-45 |
+| Chart pages, forms, the grid UI | TOK-43 — **canceled** (CRM-first Accept, 2026-09-10) |
+| Forms/Resources share UX redesign | TOK-50 (`CRM-FIRST-TASTE-CUTS.md` §2) |
+| CRM epic | TOK-47 / TOK-49 |
 | Shell/role chrome | TOK-46 canceled (shell PASS on the TOK-39 tip) — follow-on work rides TOK-34 |
 | SMS, Acuity import, AI drafting, claims/coding | Out of P1 (F2/F5, calendar lock) |
 | FHIR adapters of any kind | Not planned as a write path |

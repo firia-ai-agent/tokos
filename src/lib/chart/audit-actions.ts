@@ -8,6 +8,8 @@
  * key names below are chosen to describe the row without naming its contents.
  */
 
+import type { ChartDocumentKey } from "@/lib/chart/field-defs";
+
 /** `audit_logs.entity_type` for the three chart tables. */
 export const CHART_ENTITY_TYPES = {
   visitNote: "visit_note",
@@ -34,10 +36,26 @@ export const CHART_AUDIT_ACTIONS = {
   exported: "chart.exported",
   /** On-call opening a chart they are not assigned to; reason required (Faith K2). */
   breakGlass: "chart.break_glass",
+  /**
+   * A refusal (TOK-45). Denials are logged as loudly as reads: a chart nobody can prove
+   * was knocked on is not protected, it is unwatched — the same argument as `viewed`.
+   */
+  accessDenied: "chart.access_denied",
 } as const;
 
 export type ChartAuditAction =
   (typeof CHART_AUDIT_ACTIONS)[keyof typeof CHART_AUDIT_ACTIONS];
+
+/**
+ * Which entity type a document's rows are audited under. Two documents share
+ * `visit_notes`, so this is a mapping rather than the document key itself.
+ */
+export const CHART_DOCUMENT_ENTITY_TYPES: Record<ChartDocumentKey, ChartEntityType> = {
+  prenatal_visit: CHART_ENTITY_TYPES.visitNote,
+  postpartum_visit: CHART_ENTITY_TYPES.visitNote,
+  birth_log: CHART_ENTITY_TYPES.birthLog,
+  care_plan: CHART_ENTITY_TYPES.carePlan,
+};
 
 /**
  * PHI-free metadata for a chart audit row. Ids, a policy name, a version, and — for
@@ -51,6 +69,12 @@ export function chartAuditMetadata(input: {
   sharePolicy?: string;
   /** Free text from staff, so it stays out of anything a template can render. */
   reason?: string;
+  /** TOK-45 access decisions: what was asked for, how the actor stands, why it failed. */
+  capability?: string;
+  relationship?: string;
+  denyReason?: string;
+  /** `staff` or `client` on an export — which field set was handed out. */
+  audience?: string;
 }): Record<string, string> {
   const out: Record<string, string> = { record_type: input.entityType };
   if (input.clientId) out.client_id = input.clientId;
@@ -58,5 +82,9 @@ export function chartAuditMetadata(input: {
   if (input.version !== undefined) out.version = String(input.version);
   if (input.sharePolicy) out.share_policy = input.sharePolicy;
   if (input.reason) out.reason = input.reason;
+  if (input.capability) out.capability = input.capability;
+  if (input.relationship) out.relationship = input.relationship;
+  if (input.denyReason) out.deny_reason = input.denyReason;
+  if (input.audience) out.audience = input.audience;
   return out;
 }

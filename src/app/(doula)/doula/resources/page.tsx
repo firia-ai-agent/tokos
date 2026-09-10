@@ -87,7 +87,7 @@ export default async function DoulaResourcesPage({
           <div className="border-b border-teal/10 px-5 py-3.5">
             <h2 className="font-heading text-xl text-teal-ink">Library</h2>
             <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-              Non-clinical prep material you have written or linked.
+              Prep handouts you have written or linked.
             </p>
           </div>
           {hub.library.length === 0 ? (

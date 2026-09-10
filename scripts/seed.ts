@@ -7,6 +7,7 @@ import {
   assignments,
   auditLogs,
   availability,
+  carePlans,
   calendarEvents,
   clientPortalAccess,
   clients,
@@ -40,6 +41,7 @@ import {
 import { saveProviderPhoto } from "../src/lib/provider-photo";
 import { CHART_AUDIT_ACTIONS, CHART_ENTITY_TYPES, chartAuditMetadata } from "../src/lib/chart/audit-actions";
 import { parseChartAnswers } from "../src/lib/chart/schemas";
+import { CARE_PLAN_SHAREABLE_POLICY } from "../src/lib/chart/share-policy";
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const DOULA_ID = "22222222-2222-4222-8222-222222222222";
@@ -437,6 +439,81 @@ async function main() {
       sharePolicy: "staff_only",
     }),
   });
+
+  // Jordan's birth preferences, signed and handed back (TOK-45). This is the one chart
+  // document Faith's K1 opens to a family: their own answers, under
+  // `preferences_shareable`, which is what `/portal/passport` reads. Everything else on
+  // the chart stays `staff_only` — the visit note above is the proof.
+  const jordanCarePlanAnswers = parseChartAnswers("care_plan", "signed", {
+    early_labor_non_medical: ["labor_at_home", "shower_or_jacuzzi", "birth_ball", "music"],
+    early_labor_medical: ["intermittent_monitoring", "heparin_lock", "vaginal_checks_limited"],
+    medication_code_word: "pineapple",
+    birth_choices: [
+      "parent_chooses_position",
+      "delayed_cord_clamping",
+      "cord_cut_by_partner",
+      "baby_on_chest_immediately",
+      "delay_newborn_procedures",
+    ],
+    newborn_procedures: ["vitamin_k", "eye_ointment"],
+    know_gender: "surprise",
+    circumcising: "no",
+    keeping_placenta: "no",
+    doula_first_name: "Maya",
+    doula_last_name: "Chen",
+    doula_signature: "Maya Chen",
+  });
+  const JORDAN_CARE_PLAN_ID = "2c2c2c2c-2c2c-4c2c-8c2c-2c2c2c2c2c2c";
+  const carePlanSignedAt = new Date();
+  carePlanSignedAt.setDate(carePlanSignedAt.getDate() - 3);
+  await db.insert(carePlans).values({
+    id: JORDAN_CARE_PLAN_ID,
+    organizationId: ORG_ID,
+    clientId: CLIENT_ID,
+    engagementId: JORDAN_ENGAGEMENT_ID,
+    authorUserId: DOULA_ID,
+    status: "signed",
+    answers: jordanCarePlanAnswers,
+    sharePolicy: CARE_PLAN_SHAREABLE_POLICY,
+    signedAt: carePlanSignedAt,
+    signedByUserId: DOULA_ID,
+  });
+  await db.insert(auditLogs).values([
+    {
+      id: "2d2d2d2d-2d2d-4d2d-8d2d-2d2d2d2d2d2d",
+      organizationId: ORG_ID,
+      actorUserId: DOULA_ID,
+      action: CHART_AUDIT_ACTIONS.signed,
+      entityType: CHART_ENTITY_TYPES.carePlan,
+      entityId: JORDAN_CARE_PLAN_ID,
+      at: carePlanSignedAt,
+      metadata: chartAuditMetadata({
+        entityType: CHART_ENTITY_TYPES.carePlan,
+        clientId: CLIENT_ID,
+        engagementId: JORDAN_ENGAGEMENT_ID,
+        version: 1,
+        sharePolicy: "staff_only",
+      }),
+    },
+    {
+      id: "2e2e2e2e-2e2e-4e2e-8e2e-2e2e2e2e2e2e",
+      organizationId: ORG_ID,
+      actorUserId: DOULA_ID,
+      action: CHART_AUDIT_ACTIONS.shared,
+      entityType: CHART_ENTITY_TYPES.carePlan,
+      entityId: JORDAN_CARE_PLAN_ID,
+      at: carePlanSignedAt,
+      metadata: chartAuditMetadata({
+        entityType: CHART_ENTITY_TYPES.carePlan,
+        clientId: CLIENT_ID,
+        engagementId: JORDAN_ENGAGEMENT_ID,
+        version: 1,
+        sharePolicy: CARE_PLAN_SHAREABLE_POLICY,
+        capability: "share",
+        relationship: "primary_doula",
+      }),
+    },
+  ]);
 
   const averyEdd = new Date();
   averyEdd.setDate(averyEdd.getDate() + 35);
@@ -897,7 +974,8 @@ ${roster}
   Forms:   3 templates, 3 incomplete each for Jordan and Avery (TOK-27) — the postpartum one
            carries sensitive questions and is marked "For a visit" for co-complete
   Library: 2 resources; the comfort checklist is read by Jordan and unread by Avery
-  Chart:   one draft prenatal visit note for Jordan, staff_only, unsigned (TOK-44)
+  Chart:   one draft prenatal visit note for Jordan, staff_only, unsigned (TOK-44), and
+           her signed birth preferences shared back to her portal (TOK-45) — /portal/passport
   Portal:  Jordan's message thread is two-way out of the box (TOK-28) — Maya's welcome
            yesterday, Jordan's reply this morning, both still unread on their own side`);
   await closeDb();

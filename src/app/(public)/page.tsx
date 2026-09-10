@@ -14,8 +14,8 @@ export default function HomePage() {
           </h1>
           <p className="max-w-xl text-lg text-muted-foreground">
             One NOVA doula can take a family from intake to a signed, paid, complete
-            contract — then keep the engagement in a shared portal. No clinical chrome.
-            No investor theater.
+            contract — then keep the engagement in a shared portal. Built for birth
+            work, not a clinic. No investor theater.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
