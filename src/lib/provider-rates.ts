@@ -245,3 +245,32 @@ export function serviceAreaSummary(input: ServiceAreaInput): string {
 export function hasServiceArea(input: ServiceAreaInput): boolean {
   return serviceAreaSummary(input) !== "";
 }
+
+/* -------------------------------------------------------------------- rate card ---- */
+
+/**
+ * A whole rate card — the grid plus the service area — as one value.
+ *
+ * The profile form, the seed, and the live ensure script all have to land the same six
+ * columns, and three of those are *derived*. Deriving them in three places is how
+ * `ratesLabel` starts disagreeing with `ratesJson`, so the derivation lives here once and
+ * every writer spreads the result.
+ */
+export type ProviderRateCard = ServiceAreaInput & {
+  rates: readonly ProviderRate[];
+};
+
+export function rateCardColumns(card: ProviderRateCard) {
+  const rates = sortRates(card.rates);
+  const address = String(card.address ?? "").trim();
+  const zip = normalizeZip(card.zip);
+  const radiusMiles = parseRadiusMiles(card.radiusMiles);
+  return {
+    ratesJson: rates,
+    ratesLabel: ratesSummary(rates),
+    serviceAreaAddress: address || null,
+    serviceAreaZip: zip || null,
+    travelRadiusMiles: radiusMiles,
+    serviceArea: serviceAreaSummary({ address, zip, radiusMiles }),
+  };
+}

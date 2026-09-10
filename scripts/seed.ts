@@ -39,7 +39,9 @@ import {
   demoAccount,
   demoLoginHintLines,
 } from "../src/lib/demo-logins";
+import { demoRateCard } from "../src/lib/demo-rate-cards";
 import { saveProviderPhoto } from "../src/lib/provider-photo";
+import { rateCardColumns } from "../src/lib/provider-rates";
 import {
   PROVIDER_HANDOUT_TAGS,
   providerHandoutBody,
@@ -248,8 +250,7 @@ async function main() {
     slug: "maya-chen",
     headline: "Steady company for your labor and the days after",
     bio: "I support families across Northern Virginia through pregnancy, labor, and the first weeks home. My work is practical: a calm person in the room, a plan you can actually use, and clear next steps. I am not a clinician — I am the person who stays.",
-    serviceArea: "Arlington, Alexandria, Fairfax, and DC",
-    ratesLabel: "Birth package from $2,800",
+    ...rateCardColumns(demoRateCard("maya-chen")),
     published: true,
   });
   await seedProviderPhoto({
@@ -270,8 +271,7 @@ async function main() {
     slug: "priya-raman",
     headline: "Overnight and postpartum care, plus births as backup",
     bio: "I take the nights and the early weeks — feeding, rest, and the small practical things that make a house work again. I also stand in as backup for births, so a family I have met is never handed to a stranger at 3am.",
-    serviceArea: "Arlington, Falls Church, and McLean",
-    ratesLabel: "Overnight care from $45/hr",
+    ...rateCardColumns(demoRateCard("priya-raman")),
     published: true,
   });
 
@@ -1455,8 +1455,7 @@ async function main() {
     slug: "sam-ortega",
     headline: "Birth and postpartum support across Richmond",
     bio: "I walk with families through late pregnancy, labor, and the first weeks home. Practical, unhurried, and clear about what is mine to do and what belongs to your medical team.",
-    serviceArea: "Richmond and Petersburg",
-    ratesLabel: "Birth package from $2,400",
+    ...rateCardColumns(demoRateCard("sam-ortega")),
     published: true,
   });
   await seedProviderPhoto({
