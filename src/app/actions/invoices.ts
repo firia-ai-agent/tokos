@@ -16,6 +16,7 @@ import {
   PAYMENT_TERMS,
   dueDateFrom,
   invoiceCleared,
+  invoiceNumberPrefix,
   nextInvoiceNumber,
   parseAmountToCents,
 } from "@/lib/invoice-dashboard";
@@ -88,17 +89,27 @@ export async function createInvoiceAction(formData: FormData) {
     .limit(1);
   if (!client) redirect(`${INVOICES_PATH}?error=family`);
 
-  const existing = await db
-    .select({ id: invoices.id })
+  // The numbers already issued, not how many rows there are: the sequence has to carry on
+  // from the last invoice a family was actually sent (TOK-62).
+  const issued = await db
+    .select({ number: invoices.number })
     .from(invoices)
     .where(eq(invoices.organizationId, staff.organizationId));
+  const [org] = await db
+    .select({ name: organizations.name, portalName: organizations.portalName, slug: organizations.slug })
+    .from(organizations)
+    .where(eq(organizations.id, staff.organizationId))
+    .limit(1);
 
   const days = PAYMENT_TERMS.some((term) => term.days === termDays)
     ? termDays
     : DEFAULT_PAYMENT_TERM_DAYS;
   const issuedAt = new Date();
   const invoiceId = newId();
-  const number = nextInvoiceNumber(existing.length);
+  const number = nextInvoiceNumber(
+    issued.map((row) => row.number),
+    invoiceNumberPrefix(org ?? null),
+  );
 
   await db.insert(invoices).values({
     id: invoiceId,
@@ -137,7 +148,9 @@ export async function createInvoiceAction(formData: FormData) {
   });
 
   revalidateMoney(client.id);
-  redirect(`${INVOICES_PATH}?saved=created`);
+  // The number goes back with the redirect so the confirmation names the invoice the
+  // staffer just raised, rather than leaving her to hunt for it in the table (TOK-62).
+  redirect(`${INVOICES_PATH}?saved=created&number=${encodeURIComponent(number)}`);
 }
 
 /**

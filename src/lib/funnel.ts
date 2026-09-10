@@ -13,6 +13,7 @@ import {
   fileObjects,
   invoiceLines,
   invoices,
+  organizations,
   paymentStatuses,
   pipelineEvents,
   pipelineStages,
@@ -39,7 +40,7 @@ import {
 import { AI_NOTE_SOURCES, type AiNoteSource } from "@/lib/lead-fields";
 import { paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
 import { openPaymentStatus, setPaymentStatusForInvoice } from "@/lib/payment-status";
-import { dueDateFrom, nextInvoiceNumber } from "@/lib/invoice-dashboard";
+import { dueDateFrom, invoiceNumberPrefix, nextInvoiceNumber } from "@/lib/invoice-dashboard";
 import { assertSlotOpen } from "@/lib/calendar";
 import { appUrl } from "@/lib/env";
 
@@ -322,11 +323,23 @@ export async function sendContract(input: {
     type: "sent",
     actorUserId: input.actorUserId,
   });
-  const invoiceCount = (await db.select().from(invoices).where(eq(invoices.organizationId, input.organizationId))).length;
+  const issued = await db
+    .select({ number: invoices.number })
+    .from(invoices)
+    .where(eq(invoices.organizationId, input.organizationId));
+  const [org] = await db
+    .select({ name: organizations.name, portalName: organizations.portalName, slug: organizations.slug })
+    .from(organizations)
+    .where(eq(organizations.id, input.organizationId))
+    .limit(1);
   const invoiceId = newId();
   // Numbering and payment terms are the practice's, declared once beside the Templates
-  // tab that shows them (TOK-55) — not two literals that drift apart in two files.
-  const number = nextInvoiceNumber(invoiceCount);
+  // tab that shows them (TOK-55) — not two literals that drift apart in two files. The
+  // sequence carries on from the highest number issued, so it never rewinds (TOK-62).
+  const number = nextInvoiceNumber(
+    issued.map((row) => row.number),
+    invoiceNumberPrefix(org ?? null),
+  );
   await db.insert(invoices).values({
     id: invoiceId,
     organizationId: input.organizationId,

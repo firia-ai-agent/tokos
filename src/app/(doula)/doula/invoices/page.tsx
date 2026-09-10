@@ -5,10 +5,10 @@ import { billableFamilies, invoiceDashboardRows } from "@/lib/queries";
 import { formatCents } from "@/lib/money";
 import {
   INVOICE_COPY,
-  INVOICE_NOTICES,
   filterInvoices,
   invoiceCleared,
   invoiceCsvFilename,
+  invoiceNotice,
   invoiceSummary,
   invoiceTypeLabel,
   invoicesToCsv,
@@ -66,8 +66,7 @@ export default async function InvoicesPage({
   const visible = pageSlice(filtered, page);
   const pages = pageCount(filtered.length);
 
-  const notice =
-    INVOICE_NOTICES[String(query.error ?? "")] ?? INVOICE_NOTICES[String(query.saved ?? "")];
+  const notice = invoiceNotice(query);
 
   const pageHref = (next: number) => {
     const params = new URLSearchParams();

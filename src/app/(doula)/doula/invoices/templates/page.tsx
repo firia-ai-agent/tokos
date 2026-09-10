@@ -11,11 +11,11 @@ import { DEFAULT_PORTAL_NAME } from "@/lib/client-brand";
 import {
   DEFAULT_PAYMENT_TERM_DAYS,
   INVOICE_COPY,
-  INVOICE_NOTICES,
-  INVOICE_NUMBER_PREFIX,
   INVOICE_REMINDERS,
   PAYMENT_METHODS,
   dueDateFrom,
+  invoiceNotice,
+  invoiceNumberPrefix,
   nextInvoiceNumber,
   paymentTermLabel,
 } from "@/lib/invoice-dashboard";
@@ -33,7 +33,7 @@ function footerText(html: string | null): string {
 export default async function InvoiceTemplatesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; number?: string }>;
 }) {
   const staff = await requireStaff();
   const query = await searchParams;
@@ -50,8 +50,13 @@ export default async function InvoiceTemplatesPage({
   const newest = [...rows].sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime())[0];
   const issuedAt = newest?.issuedAt ?? new Date();
 
-  const notice =
-    INVOICE_NOTICES[String(query.error ?? "")] ?? INVOICE_NOTICES[String(query.saved ?? "")];
+  // This practice's own numbering, not the seed's: a second agency reading "NOVA-…" here
+  // is being shown someone else's letters on its own invoices (TOK-62).
+  const issued = rows.map((row) => row.number);
+  const upcomingNumber = nextInvoiceNumber(issued, invoiceNumberPrefix(org ?? null));
+  const numberPrefix = invoiceNumberPrefix(org ?? null);
+
+  const notice = invoiceNotice(query);
 
   return (
     <div className="space-y-3.5">
@@ -84,8 +89,9 @@ export default async function InvoiceTemplatesPage({
           primaryColor: org?.primaryColor ?? DEFAULT_PRIMARY_COLOR,
           footerText: footerText(org?.footerHtml ?? null),
         }}
+        upcomingNumber={upcomingNumber}
         sample={{
-          number: newest?.number ?? nextInvoiceNumber(0),
+          number: newest?.number ?? upcomingNumber,
           familyName: newest?.familyName ?? "Jordan Blake",
           familyEmail: newest?.familyEmail ?? "jordan@example.com",
           lineLabel: newest?.packageLabel ?? "Birth doula care",
@@ -105,11 +111,12 @@ export default async function InvoiceTemplatesPage({
             {INVOICE_COPY.templates.numberingHeading}
           </h3>
           <p className="mt-2 font-mono text-[13px] font-semibold uppercase text-teal">
-            {INVOICE_NUMBER_PREFIX}-…
+            {numberPrefix}-…
           </p>
           <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-            Invoices are numbered {nextInvoiceNumber(0)} upward, in the order they are raised.
-            The prefix is fixed so the ledger you already have stays continuous.
+            The next one is {upcomingNumber}, and they carry on upward in the order they are
+            raised. The prefix follows the ledger you already have, so nothing you have sent
+            is orphaned.
           </p>
         </article>
 

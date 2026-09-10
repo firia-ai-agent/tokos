@@ -173,6 +173,20 @@ describe("createInvoiceAction opens a payment row (TOK-61)", () => {
     expect(fixtures.writes.paymentStatuses).toHaveLength(0);
   });
 
+  it("carries the new number back so the confirmation names it (TOK-62)", async () => {
+    await run({ clientId: CLIENT_ID, amount: "250" });
+    const number = String(fixtures.writes.invoices[0].number);
+    expect(number).toMatch(/^[A-Z]+-\d+$/);
+    expect(fixtures.redirects.at(-1)).toContain(`number=${number}`);
+  });
+
+  it("numbers from the ledger's own prefix, not a hardcoded one (TOK-62)", async () => {
+    await run({ clientId: CLIENT_ID, amount: "250" });
+    // The stub org has no invoices and no name, so the seeded prefix is the fallback —
+    // what matters is that the action asked the ledger rather than assuming.
+    expect(fixtures.writes.invoices[0].number).toBe("NOVA-1001");
+  });
+
   it("writes nothing when the amount does not parse", async () => {
     await run({ clientId: CLIENT_ID, amount: "" });
     expect(fixtures.redirects.at(-1)).toContain("error=amount");

@@ -44,6 +44,7 @@ export type InvoicePreviewSample = {
 export function InvoiceTemplateForm({
   defaults,
   sample,
+  upcomingNumber,
   canEdit,
 }: {
   defaults: {
@@ -54,6 +55,8 @@ export function InvoiceTemplateForm({
     footerText: string;
   };
   sample: InvoicePreviewSample;
+  /** The number this practice's next invoice will actually carry (TOK-62). */
+  upcomingNumber: string;
   canEdit: boolean;
 }) {
   const [name, setName] = useState(defaults.portalName);
@@ -250,9 +253,10 @@ export function InvoiceTemplateForm({
           </footer>
         </article>
         <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
-          Numbers run {nextInvoiceNumber(0)}, {nextInvoiceNumber(1)}, {nextInvoiceNumber(2)} — and
-          a new invoice is {paymentTermLabel(DEFAULT_PAYMENT_TERM_DAYS).toLowerCase()}, which puts
-          this one on {format(dueDateFrom(new Date()), "MMM d")}.
+          Numbers run {upcomingNumber}, {nextInvoiceNumber([upcomingNumber])},{" "}
+          {nextInvoiceNumber([nextInvoiceNumber([upcomingNumber])])} — and a new invoice is{" "}
+          {paymentTermLabel(DEFAULT_PAYMENT_TERM_DAYS).toLowerCase()}, which puts this one on{" "}
+          {format(dueDateFrom(new Date()), "MMM d")}.
         </p>
       </section>
     </form>

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PAYMENT_TERM_DAYS,
@@ -26,7 +28,11 @@ import {
   invoiceTypeLabel,
   invoicesToCsv,
   isOverdue,
+  INVOICE_NOTICES,
+  invoiceNotice,
+  invoiceNumberPrefix,
   nextInvoiceNumber,
+  parseInvoiceNumber,
   packageRollups,
   pageCount,
   pageSlice,
@@ -449,9 +455,68 @@ describe("CSV export", () => {
 });
 
 describe("numbering and terms", () => {
-  it("continues the practice's own numbering", () => {
-    expect(nextInvoiceNumber(0)).toBe("NOVA-1001");
-    expect(nextInvoiceNumber(12)).toBe("NOVA-1013");
+  it("continues the practice's own numbering from the last number issued", () => {
+    expect(nextInvoiceNumber([])).toBe("NOVA-1001");
+    expect(nextInvoiceNumber(["NOVA-1001"])).toBe("NOVA-1002");
+    expect(nextInvoiceNumber(["NOVA-1001", "NOVA-1012"])).toBe("NOVA-1013");
+  });
+
+  /* ------------------------------------------------------------------ TOK-62 */
+
+  it("never rewinds when an invoice is deleted, so no number is issued twice", () => {
+    // Counting rows would answer NOVA-1002 here and collide with a number the family has.
+    expect(nextInvoiceNumber(["NOVA-1001", "NOVA-1003"])).toBe("NOVA-1004");
+  });
+
+  it("ignores anything that is not one of our numbers rather than tripping over it", () => {
+    expect(nextInvoiceNumber(["", "draft", "NOVA-1004", "2024/17"])).toBe("NOVA-1005");
+    expect(parseInvoiceNumber("NOVA-1004")).toEqual({ prefix: "NOVA", sequence: 1004 });
+    expect(parseInvoiceNumber("nova-1004")).toEqual({ prefix: "NOVA", sequence: 1004 });
+    expect(parseInvoiceNumber("1004")).toBeNull();
+    expect(parseInvoiceNumber(null)).toBeNull();
+  });
+
+  it("keeps the prefix the ledger already carries, whatever the practice is called now", () => {
+    expect(nextInvoiceNumber(["CEDAR-1007"], "NOVA")).toBe("CEDAR-1008");
+  });
+
+  it("starts a second practice on its own letters instead of another practice's", () => {
+    expect(
+      nextInvoiceNumber([], invoiceNumberPrefix({ name: "Cedar Birth Collective" })),
+    ).toBe("CEDAR-1001");
+    expect(invoiceNumberPrefix({ name: "Cedar Birth Collective" })).toBe("CEDAR");
+    expect(invoiceNumberPrefix({ portalName: "Nova Birth Partners" })).toBe("NOVA");
+    expect(invoiceNumberPrefix({ slug: "cedar-birth-collective" })).toBe("CEDAR");
+  });
+
+  it("falls back to the seeded prefix rather than printing an empty one", () => {
+    expect(invoiceNumberPrefix(null)).toBe("NOVA");
+    expect(invoiceNumberPrefix({ name: "   " })).toBe("NOVA");
+    expect(invoiceNumberPrefix({ name: "123 Doulas" })).toBe("NOVA");
+  });
+
+  it("never starts below the practice's first number", () => {
+    expect(nextInvoiceNumber(["NOVA-7"])).toBe("NOVA-1001");
+  });
+
+  it("names the invoice on the confirmation the staffer lands on", () => {
+    const notice = invoiceNotice({ saved: "created", number: "NOVA-1002" });
+    expect(notice?.text).toContain("NOVA-1002");
+    expect(notice?.tone).toBe("teal");
+  });
+
+  it("still says something sensible when no number comes back", () => {
+    expect(invoiceNotice({ saved: "created" })?.text).toBe(INVOICE_NOTICES.created.text);
+    expect(invoiceNotice({})).toBeNull();
+  });
+
+  it("does not decorate an error, and does not echo a number that is not one of ours", () => {
+    expect(invoiceNotice({ error: "amount", number: "NOVA-1002" })?.text).toBe(
+      INVOICE_NOTICES.amount.text,
+    );
+    expect(invoiceNotice({ saved: "created", number: "<script>" })?.text).toBe(
+      INVOICE_NOTICES.created.text,
+    );
   });
 
   it("has one default term, shared with the contract flow", () => {
@@ -510,5 +575,60 @@ describe("copy contract", () => {
     expect(invoiceCountLabel(0)).toBe("0 invoices");
     expect(familyCountLabel(1)).toBe("1 family");
     expect(familyCountLabel(3)).toBe("3 families");
+  });
+});
+
+/* ---------------------------------------------------------------------- TOK-62 */
+
+/**
+ * A number nobody can read is not an invoice number. These pin the surfaces a human
+ * actually reads one on — the staff table, the family's outstanding cards and her payment
+ * history, the row menu, and the stub pay page — against the source that renders them.
+ */
+function source(...parts: string[]): string {
+  return readFileSync(join(process.cwd(), "src", ...parts), "utf8");
+}
+
+describe("invoice numbers are visible where money is (TOK-62)", () => {
+  it("prints the number in the staff dashboard row and its actions menu", () => {
+    const page = source("app", "(doula)", "doula", "invoices", "page.tsx");
+    expect(page).toContain("{invoice.number}");
+    expect(page).toContain("invoiceNumber={invoice.number}");
+  });
+
+  it("prints it on the family's outstanding cards and on her payment history", () => {
+    const pay = source("app", "(client)", "portal", "pay", "page.tsx");
+    expect(pay).toContain("{item.invoice.number}");
+    expect(pay).toContain("{invoice.number}");
+  });
+
+  it("names it on the pay page a family lands on", () => {
+    expect(source("app", "(public)", "stub", "pay", "page.tsx")).toContain("{invoice.number}");
+  });
+
+  it("shows the practice its real next number, not a seeded literal", () => {
+    const templates = source("app", "(doula)", "doula", "invoices", "templates", "page.tsx");
+    expect(templates).toContain("invoiceNumberPrefix");
+    expect(templates).toContain("upcomingNumber");
+    // The hardcoded NOVA prefix is what billed a second practice under someone else's name.
+    expect(templates).not.toContain("INVOICE_NUMBER_PREFIX");
+  });
+
+  it("hands the create flow its number back so the confirmation can say it", () => {
+    const action = source("app", "actions", "invoices.ts");
+    expect(action).toContain("saved=created&number=");
+    expect(action).toContain("invoiceNumberPrefix");
+  });
+
+  it("has exactly one numbering helper — no surface invents a second", () => {
+    for (const file of [
+      source("app", "actions", "invoices.ts"),
+      source("lib", "funnel.ts"),
+      source("app", "(doula)", "doula", "invoices", "templates", "page.tsx"),
+      source("components", "brand", "invoice-template-form.tsx"),
+    ]) {
+      expect(file).toContain("nextInvoiceNumber");
+      expect(file).not.toMatch(/`\$\{[^}]*\}-\$\{[^}]*1001/);
+    }
   });
 });

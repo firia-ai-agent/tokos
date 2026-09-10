@@ -639,15 +639,76 @@ export function invoiceCsvFilename(now: Date): string {
 /* --------------------------------------------------------------- numbering */
 
 /**
- * The practice's own numbering. It is `NOVA-1001` upward because that is what the seeded
- * ledger already reads and a prefix change would orphan every invoice issued so far —
- * the Templates tab shows it rather than offering an edit that would break continuity.
+ * The practice's own numbering — `NOVA-1001` upward, one sequence per practice.
+ *
+ * Two things a human-facing number has to be, which counting rows was not (TOK-62):
+ *
+ * *Stable.* The next number used to be `START + how many invoices exist`, so deleting or
+ * importing one silently rewound the sequence and re-issued a number a family had already
+ * been sent — and the `(organization, number)` unique index turned that into a failed
+ * save. It reads the highest number already issued instead, so the ledger only ever goes
+ * forward.
+ *
+ * *The practice's own.* The prefix was the literal `NOVA` for everyone, so a second
+ * agency billed its families under another practice's letters. A ledger that has already
+ * issued invoices keeps whatever prefix those invoices carry — continuity outranks
+ * tidiness, and NOVA's own numbering does not move — and a practice with an empty ledger
+ * starts from its own name.
  */
 export const INVOICE_NUMBER_PREFIX = "NOVA";
 export const INVOICE_NUMBER_START = 1001;
 
-export function nextInvoiceNumber(existingCount: number, prefix = INVOICE_NUMBER_PREFIX): string {
-  return `${prefix}-${INVOICE_NUMBER_START + existingCount}`;
+/** How much of a name becomes a prefix. Long enough to recognise, short enough to print. */
+const PREFIX_MAX = 8;
+
+export type ParsedInvoiceNumber = { prefix: string; sequence: number };
+
+/** Splits `NOVA-1004` into its two halves. Anything else is not one of ours. */
+export function parseInvoiceNumber(value: string | null | undefined): ParsedInvoiceNumber | null {
+  const match = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/.exec(String(value ?? "").trim());
+  if (!match) return null;
+  return { prefix: match[1].toUpperCase(), sequence: Number(match[2]) };
+}
+
+/**
+ * The letters a practice with no invoices yet starts from: the first word of the name it
+ * already calls itself, in caps. "Cedar Birth Collective" bills as `CEDAR-1001`, which is
+ * the practice a family recognises on her bank statement.
+ */
+export function invoiceNumberPrefix(
+  org: { portalName?: string | null; name?: string | null; slug?: string | null } | null,
+): string {
+  for (const candidate of [org?.name, org?.portalName, org?.slug]) {
+    const word = String(candidate ?? "")
+      .replace(/[^A-Za-z0-9\s-]/g, " ")
+      .trim()
+      .split(/[\s-]+/)[0];
+    const cleaned = word?.replace(/[^A-Za-z0-9]/g, "").slice(0, PREFIX_MAX).toUpperCase();
+    if (cleaned && /^[A-Z]/.test(cleaned)) return cleaned;
+  }
+  return INVOICE_NUMBER_PREFIX;
+}
+
+/**
+ * The next number for a practice, given every number it has already issued.
+ *
+ * `fallbackPrefix` is only consulted for an empty ledger; once an invoice exists, its own
+ * prefix is the practice's, so nothing already sent to a family is orphaned.
+ */
+export function nextInvoiceNumber(
+  existing: readonly string[],
+  fallbackPrefix = INVOICE_NUMBER_PREFIX,
+): string {
+  const parsed = existing
+    .map(parseInvoiceNumber)
+    .filter((entry): entry is ParsedInvoiceNumber => entry !== null);
+  if (parsed.length === 0) {
+    return `${invoiceNumberPrefix({ name: fallbackPrefix })}-${INVOICE_NUMBER_START}`;
+  }
+  const highest = parsed.reduce((best, entry) => (entry.sequence > best.sequence ? entry : best));
+  // A ledger can only go forward, so a stray low-numbered import never rewinds it.
+  const sequence = Math.max(highest.sequence + 1, INVOICE_NUMBER_START);
+  return `${highest.prefix}-${sequence}`;
 }
 
 /* ---------------------------------------------------------- template config */
@@ -830,6 +891,36 @@ export const INVOICE_NOTICES: Record<string, { tone: "teal" | "coral"; text: str
   missing: { tone: "coral", text: "That invoice could not be found in your practice." },
   brand: { tone: "coral", text: INVOICE_COPY.templates.errorNotice },
 };
+
+export type InvoiceNotice = { tone: "teal" | "coral"; text: string };
+
+/**
+ * The banner above the table, resolved once for every surface that shows one.
+ *
+ * A raised invoice names itself: the staffer who just billed a family should read the
+ * number on the confirmation rather than go hunting for it in the table (TOK-62). The
+ * number is only trusted as far as being echoed back — it is rendered as text, and only
+ * when it is shaped like one of ours.
+ */
+export function invoiceNotice(query: {
+  saved?: string | string[];
+  error?: string | string[];
+  number?: string | string[];
+}): InvoiceNotice | null {
+  const first = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+  const notice = INVOICE_NOTICES[first(query.error)] ?? INVOICE_NOTICES[first(query.saved)];
+  if (!notice) return null;
+  const number = parseInvoiceNumber(first(query.number));
+  if (!number || notice.tone === "coral") return notice;
+  return { ...notice, text: `${number.prefix}-${number.sequence} raised. ${afterFirstStop(notice.text)}` };
+}
+
+/** Everything after the notice's first sentence, so the number replaces it rather than doubling it. */
+function afterFirstStop(text: string): string {
+  const index = text.indexOf(". ");
+  return index === -1 ? text : text.slice(index + 2);
+}
 
 /**
  * Dollars in a text box, cents in the database. A blank, a negative, a stray `$1,200.00`
