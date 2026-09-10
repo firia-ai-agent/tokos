@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/tenancy";
-import { leadBoard, teamRoster } from "@/lib/queries";
+import { attentionInput, leadBoard, teamRoster } from "@/lib/queries";
 import { staffStageFilterLabel, staffStageLabel, staffStageOptions } from "@/lib/pipeline";
 import {
   eddMonthOptions,
@@ -252,19 +252,9 @@ export default async function ClientsPage({
         {visible.map((row) => {
           const { client } = row;
           const follow = followUpState(client.followUpDueOn, today);
-          const reasons = needsAttentionReasons(
-            {
-              clientId: client.id,
-              name: client.displayName,
-              stage: row.stage,
-              followUpDueOn: client.followUpDueOn,
-              reviewed: client.reviewed,
-              hasPrimaryDoula: Boolean(row.primaryDoulaUserId),
-              stageEnteredAt: row.stageEnteredAt,
-              lastNoteAt: row.lastNoteAt,
-            },
-            today,
-          );
+          // The rules see the same row the bell and Home see — including the money and the
+          // TOK-58 counts, which a hand-built input here used to drop on the floor.
+          const reasons = needsAttentionReasons(attentionInput(row), today);
           const edd = eddWithWeeks(client.edd, today);
 
           return (

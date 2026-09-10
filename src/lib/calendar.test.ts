@@ -7,11 +7,13 @@ import {
   formatDuration,
   groupByDay,
   halfHourOptions,
+  isMissedVisit,
   isSlotOpen,
   openSlots,
   parseAvailabilityWindow,
   splitSlots,
   timezoneLabel,
+  TIME_OFF_TYPE,
   zonedParts,
 } from "./calendar";
 
@@ -272,5 +274,45 @@ describe("availability windows (TOK-33 C8)", () => {
     expect(window).not.toBeNull();
     const values = halfHourOptions(30, 24 * 60).map((option) => option.value);
     expect(values).toContain(window!.endMinutes);
+  });
+});
+
+/* ------------------------------------------------------------------- TOK-58 */
+
+describe("isMissedVisit", () => {
+  const NOW = new Date("2026-09-10T12:00:00Z");
+  const visit = (over: Partial<Parameters<typeof isMissedVisit>[0]> = {}) => ({
+    type: "consult",
+    status: "scheduled",
+    endsAt: new Date("2026-09-08T15:00:00Z"),
+    ...over,
+  });
+
+  it("counts a past visit nobody ever resolved", () => {
+    expect(isMissedVisit(visit(), NOW)).toBe(true);
+    expect(isMissedVisit(visit({ status: "unconfirmed" }), NOW)).toBe(true);
+  });
+
+  it("counts a no-show whatever the clock says", () => {
+    expect(isMissedVisit(visit({ status: "no_show" }), NOW)).toBe(true);
+    expect(
+      isMissedVisit(visit({ status: "no_show", endsAt: new Date("2026-09-20T15:00:00Z") }), NOW),
+    ).toBe(true);
+  });
+
+  it("leaves a booking that has not happened yet alone", () => {
+    expect(isMissedVisit(visit({ endsAt: new Date("2026-09-20T15:00:00Z") }), NOW)).toBe(false);
+  });
+
+  it("never counts a cancellation, a completed visit, or a day off", () => {
+    expect(isMissedVisit(visit({ status: "canceled" }), NOW)).toBe(false);
+    expect(isMissedVisit(visit({ status: "completed" }), NOW)).toBe(false);
+    expect(isMissedVisit(visit({ type: TIME_OFF_TYPE }), NOW)).toBe(false);
+  });
+
+  it("reads a stored timestamp string, and shrugs at an unusable one", () => {
+    expect(isMissedVisit(visit({ endsAt: "2026-09-08T15:00:00Z" }), NOW)).toBe(true);
+    expect(isMissedVisit(visit({ endsAt: "not a date" }), NOW)).toBe(false);
+    expect(isMissedVisit(visit({ status: null }), NOW)).toBe(false);
   });
 });

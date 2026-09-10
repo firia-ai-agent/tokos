@@ -9,6 +9,10 @@
  *
  * Pure by design: the rules are the product decision, and they should be provable without
  * a database or a session.
+ *
+ * Parked for TOK-58, pending Firia: the Birth Log and staff notes on the family-facing
+ * bell, "resources incomplete" as a reason, and booking windows / availability chrome.
+ * None of them is a rule here yet, and none should be added without that call.
  */
 
 import { differenceInCalendarDays } from "date-fns";
@@ -24,8 +28,12 @@ import { formatCents } from "@/lib/money";
 export const NEEDS_ATTENTION_REASONS = [
   "agreement_waiting",
   "open_invoice",
+  "missed_visit",
   "follow_up_overdue",
+  "no_contact",
   "consult_note_missing",
+  "unread_message",
+  "forms_incomplete",
   "unmatched",
   "unreviewed",
   "intake_nudge",
@@ -47,16 +55,46 @@ export type NeedsAttentionReason = {
   urgent: boolean;
 };
 
+/**
+ * How long a live record may go quiet before the queue says so (TOK-58).
+ *
+ * One number, exported, because it is the practice's own policy rather than a rendering
+ * detail: the label under a family's name and the rule that puts her there are built from
+ * this constant, so raising it to ten days is one edit and no page has to be found.
+ */
+export const NEEDS_ATTENTION_NO_CONTACT_DAYS = 7;
+
 /** What each rule is called on screen. Agency vocabulary; never a client surface. */
 export const NEEDS_ATTENTION_LABELS: Record<NeedsAttentionReasonKey, string> = {
   agreement_waiting: "Agreement waiting",
   open_invoice: "Open invoice",
+  missed_visit: "Missed visit",
   follow_up_overdue: "Follow-up overdue",
+  no_contact: `No word in ${NEEDS_ATTENTION_NO_CONTACT_DAYS} days`,
   consult_note_missing: "Consult done, no note logged",
+  unread_message: "Unread message",
+  forms_incomplete: "Forms still open",
   unmatched: "No primary doula",
   unreviewed: "Not reviewed",
   intake_nudge: "Keep intake moving",
 };
+
+/**
+ * The label, with the family in it where the sentence needs her (TOK-58).
+ *
+ * "Unread message" is a fact about an inbox; "Unread from Maya Chen" is a fact about a
+ * person, which is the only kind a founder acts on. The map above stays the single place
+ * the words live — this only fills the one blank, and every other key reads straight
+ * through, so a new rule does not have to know this function exists.
+ */
+export function reasonLabel(
+  key: NeedsAttentionReasonKey,
+  ctx: { name?: string | null } = {},
+): string {
+  const name = ctx.name?.trim();
+  if (key === "unread_message" && name) return `Unread from ${name}`;
+  return NEEDS_ATTENTION_LABELS[key];
+}
 
 /**
  * Which reasons are money or a missed date, and which are housekeeping.
@@ -69,8 +107,14 @@ export const NEEDS_ATTENTION_LABELS: Record<NeedsAttentionReasonKey, string> = {
 const URGENT: Record<NeedsAttentionReasonKey, boolean> = {
   agreement_waiting: true,
   open_invoice: true,
+  // A visit nobody attended and a family nobody has spoken to are both missed dates: the
+  // first kind. Paperwork that is merely still open is not — it is a chore with a name.
+  missed_visit: true,
   follow_up_overdue: true,
+  no_contact: true,
   consult_note_missing: false,
+  unread_message: true,
+  forms_incomplete: false,
   unmatched: false,
   unreviewed: false,
   intake_nudge: false,
@@ -87,8 +131,14 @@ const URGENT: Record<NeedsAttentionReasonKey, boolean> = {
 const ACTIONS: Record<NeedsAttentionReasonKey, { action: string; anchor: string }> = {
   agreement_waiting: { action: "Chase the signature", anchor: "#money" },
   open_invoice: { action: "Chase the payment", anchor: "#money" },
+  // The record's own header is where a visit is picked back up: it carries the stage, the
+  // consult date and "Log contact", which is what following up on a missed visit means.
+  missed_visit: { action: "Follow up on the visit", anchor: "#lead-details" },
   follow_up_overdue: { action: "Set the next follow-up", anchor: "#lead-details" },
+  no_contact: { action: "Log a contact", anchor: "#lead-details" },
   consult_note_missing: { action: "Write the consult note", anchor: "#notes" },
+  unread_message: { action: "Read the message", anchor: "#portal-messages" },
+  forms_incomplete: { action: "Chase the form", anchor: "#forms" },
   unmatched: { action: "Name a primary doula", anchor: "#care-team" },
   unreviewed: { action: "Review the record", anchor: "#lead-details" },
   intake_nudge: { action: "Move intake along", anchor: "#lead-details" },
@@ -112,8 +162,12 @@ export function reasonActionHref(clientId: string, key: NeedsAttentionReasonKey)
 const WEIGHTS: Record<NeedsAttentionReasonKey, number> = {
   agreement_waiting: 60,
   open_invoice: 50,
+  missed_visit: 45,
   follow_up_overdue: 40,
+  no_contact: 35,
   consult_note_missing: 30,
+  unread_message: 28,
+  forms_incomplete: 25,
   unmatched: 20,
   unreviewed: 10,
   intake_nudge: 5,
@@ -138,6 +192,18 @@ export type NeedsAttentionInput = {
   hasOpenInvoice?: boolean;
   /** What those open invoices are worth, in cents. Detail copy only. */
   openInvoiceCents?: number;
+  /** Last logged contact of any kind — `clients.lastContactAt` (TOK-58). */
+  lastContactAt?: Date | string | null;
+  /** Family-audience form assignments still sitting at `incomplete`. */
+  incompleteFormCount?: number;
+  /** The same fact as a flag, for callers that only counted whether any are open. */
+  hasIncompleteForms?: boolean;
+  /** Visits that came and went unresolved — see `isMissedVisit` in `@/lib/calendar`. */
+  missedVisitCount?: number;
+  /** The same fact as a flag. */
+  hasMissedVisit?: boolean;
+  /** Messages the *family* sent that nobody on staff has opened. */
+  unreadInboundCount?: number;
 };
 
 export type NeedsAttentionRow = {
@@ -157,13 +223,32 @@ function asDate(value: Date | string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-const reason = (key: NeedsAttentionReasonKey, detail?: string): NeedsAttentionReason => ({
+const reason = (
+  key: NeedsAttentionReasonKey,
+  detail?: string,
+  ctx: { name?: string | null } = {},
+): NeedsAttentionReason => ({
   key,
-  label: NEEDS_ATTENTION_LABELS[key],
+  label: reasonLabel(key, ctx),
   weight: WEIGHTS[key],
   urgent: URGENT[key],
   ...(detail ? { detail } : {}),
 });
+
+/** "2 forms", "1 visit" — a count only ever reads as detail when there is one to read. */
+const many = (n: number | undefined, one: string, other = `${one}s`): string | undefined => {
+  if (!n || n <= 0) return undefined;
+  return `${n} ${n === 1 ? one : other}`;
+};
+
+/**
+ * How the silence reads under the name: "9 days quiet", or the plain fact that there is
+ * nothing to count from. Both are facts off the record, not commentary.
+ */
+const lastContactDetail = (
+  lastContactAt: Date | string | null | undefined,
+  quietDays: number,
+): string => (asDate(lastContactAt) ? `${quietDays} days quiet` : "No contact logged");
 
 /** "$2,800.00" when there is a number worth printing, nothing when there is not. */
 const money = (cents: number | undefined, suffix?: string): string | undefined => {
@@ -195,8 +280,29 @@ export function needsAttentionReasons(
     reasons.push(reason("open_invoice", money(input.openInvoiceCents)));
   }
 
+  // A visit that was booked, came round, and was never resolved — nobody marked it done,
+  // or it was marked a no-show. The caller decides which events count (`isMissedVisit`);
+  // this only asks whether any did, so the rule stays provable without a calendar.
+  if (input.hasMissedVisit || (input.missedVisitCount ?? 0) > 0) {
+    reasons.push(reason("missed_visit", many(input.missedVisitCount, "visit")));
+  }
+
   if (followUpState(input.followUpDueOn, today).state === "overdue") {
     reasons.push(reason("follow_up_overdue"));
+  }
+
+  // "No word in 7 days" (TOK-58).
+  //
+  // The measure is `clients.lastContactAt`, the same field the two-tap Log contact button
+  // writes. A family with nothing logged at all is the harder case: "never contacted" is
+  // technically infinite silence, but a record created this morning has not gone quiet, it
+  // has just arrived. So an unlogged record is measured from when it entered its current
+  // stage instead — sat in Outreach sent for a fortnight with nothing written down is
+  // exactly the silence this rule is for, and a brand-new lead stays quiet either way.
+  const quietDays = daysSinceContact(input.lastContactAt, today)
+    ?? daysSinceContact(input.stageEnteredAt, today);
+  if (quietDays !== null && quietDays >= NEEDS_ATTENTION_NO_CONTACT_DAYS) {
+    reasons.push(reason("no_contact", lastContactDetail(input.lastContactAt, quietDays)));
   }
 
   // "Note in by 4pm" is NOVA's own rule. A consult with nothing written down is the one
@@ -206,6 +312,22 @@ export function needsAttentionReasons(
     const enteredAt = asDate(input.stageEnteredAt);
     const stale = !lastNote || (enteredAt ? lastNote < enteredAt : false);
     if (stale) reasons.push(reason("consult_note_missing"));
+  }
+
+  // The family wrote and nobody has opened it. Inbound only: an unread *outbound* message
+  // is the family's to read, and putting it here would bill a doula for someone else's
+  // inbox. Her name goes in the label, because "Unread message" is not who it is from.
+  if ((input.unreadInboundCount ?? 0) > 0) {
+    reasons.push(
+      reason("unread_message", many(input.unreadInboundCount, "message"), { name: input.name }),
+    );
+  }
+
+  // Family-audience forms only. A staff visit note or a Birth Log assigned against this
+  // client is the practice's own paperwork, never a form the family owes (TOK-50), so the
+  // caller counts audience-filtered rows and this rule never has to know the difference.
+  if (input.hasIncompleteForms || (input.incompleteFormCount ?? 0) > 0) {
+    reasons.push(reason("forms_incomplete", many(input.incompleteFormCount, "form")));
   }
 
   if (!input.hasPrimaryDoula) reasons.push(reason("unmatched"));
@@ -263,9 +385,9 @@ export function reasonSummary(row: NeedsAttentionRow): string {
 }
 
 /**
- * How stale an open lead's last contact is, for the doula's two-tap contact log. Not a
- * Needs Attention rule yet (the configurable "no contact in 7 days" is P1) but the same
- * arithmetic, so it lives beside the rules rather than in a page.
+ * How stale an open lead's last contact is: the arithmetic behind both the doula's two-tap
+ * contact log and the `no_contact` rule above, which is why it lives beside the rules
+ * rather than in a page. Null means there is nothing logged to measure from.
  */
 export function daysSinceContact(
   lastContactAt: Date | string | null | undefined,

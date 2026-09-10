@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   NEEDS_ATTENTION_LABELS,
+  NEEDS_ATTENTION_NO_CONTACT_DAYS,
   NEEDS_ATTENTION_REASONS,
   daysSinceContact,
   reasonActionHref,
   reasonActionLabel,
+  reasonLabel,
   needsAttention,
   needsAttentionReasons,
   needsAttentionRows,
@@ -14,7 +16,13 @@ import {
 
 const TODAY = new Date("2026-09-10T12:00:00Z");
 
-/** A record with nothing wrong with it. Each test breaks exactly one thing. */
+/**
+ * A record with nothing wrong with it. Each test breaks exactly one thing.
+ *
+ * "Nothing wrong" now includes having been spoken to this week (TOK-58): a live record
+ * nobody has contacted in seven days is a finding, so a clean fixture has to have a
+ * recent contact logged the same way it has to have a follow-up date.
+ */
 const clean: NeedsAttentionInput = {
   clientId: "c1",
   name: "Amara Alderman",
@@ -24,6 +32,7 @@ const clean: NeedsAttentionInput = {
   hasPrimaryDoula: true,
   stageEnteredAt: new Date("2026-09-01T12:00:00Z"),
   lastNoteAt: new Date("2026-09-02T12:00:00Z"),
+  lastContactAt: new Date("2026-09-08T12:00:00Z"),
 };
 
 const keys = (input: NeedsAttentionInput) =>
@@ -319,5 +328,170 @@ describe("every reason knows how it is fixed", () => {
     for (const key of NEEDS_ATTENTION_REASONS) {
       expect(reasonActionLabel(key)).not.toBe(NEEDS_ATTENTION_LABELS[key]);
     }
+  });
+});
+
+/* ------------------------------------------------------------------- TOK-58 */
+
+/** Anchored off the constant, not a literal, so raising the policy re-aims the test. */
+const daysAgo = (n: number) => new Date(TODAY.getTime() - n * 24 * 60 * 60 * 1000);
+
+describe("no word in N days", () => {
+  it("fires on the Nth quiet day and not the day before", () => {
+    const boundary = { ...clean, lastContactAt: daysAgo(NEEDS_ATTENTION_NO_CONTACT_DAYS - 1) };
+    expect(keys(boundary)).toEqual([]);
+    expect(keys({ ...clean, lastContactAt: daysAgo(NEEDS_ATTENTION_NO_CONTACT_DAYS) })).toEqual([
+      "no_contact",
+    ]);
+  });
+
+  it("clears the moment a contact is logged", () => {
+    const quiet = { ...clean, lastContactAt: daysAgo(30) };
+    expect(keys(quiet)).toEqual(["no_contact"]);
+    expect(keys({ ...quiet, lastContactAt: TODAY })).toEqual([]);
+  });
+
+  it("measures an unlogged record from when it entered its stage", () => {
+    // Nothing logged and sat in the same stage for a fortnight is the silence the rule is
+    // for; nothing logged on a record that arrived yesterday is just a new record.
+    expect(keys({ ...clean, lastContactAt: null })).toEqual(["no_contact"]);
+    expect(
+      keys({ ...clean, lastContactAt: null, stageEnteredAt: daysAgo(1) }),
+    ).toEqual([]);
+    expect(keys({ ...clean, lastContactAt: null, stageEnteredAt: null })).toEqual([]);
+  });
+
+  it("says how long the silence is, and reads as urgent", () => {
+    const [reason] = needsAttentionReasons({ ...clean, lastContactAt: daysAgo(9) }, TODAY);
+    expect(reason.label).toBe(`No word in ${NEEDS_ATTENTION_NO_CONTACT_DAYS} days`);
+    expect(reason.detail).toBe("9 days quiet");
+    expect(reason.urgent).toBe(true);
+  });
+
+  it("says so plainly when there is nothing logged to count from", () => {
+    const [reason] = needsAttentionReasons({ ...clean, lastContactAt: null }, TODAY);
+    expect(reason.detail).toBe("No contact logged");
+  });
+
+  it("exempts a closed record like every other rule", () => {
+    expect(keys({ ...clean, stage: "closed", lastContactAt: daysAgo(90) })).toEqual([]);
+  });
+});
+
+describe("forms still open", () => {
+  it("fires on a count or a flag", () => {
+    expect(keys({ ...clean, incompleteFormCount: 2 })).toEqual(["forms_incomplete"]);
+    expect(keys({ ...clean, hasIncompleteForms: true })).toEqual(["forms_incomplete"]);
+  });
+
+  it("clears once the family has finished them", () => {
+    expect(keys({ ...clean, incompleteFormCount: 0, hasIncompleteForms: false })).toEqual([]);
+  });
+
+  it("counts them, and stays a chore rather than an alarm", () => {
+    const [reason] = needsAttentionReasons({ ...clean, incompleteFormCount: 2 }, TODAY);
+    expect(reason.label).toBe("Forms still open");
+    expect(reason.detail).toBe("2 forms");
+    expect(reason.urgent).toBe(false);
+    const [one] = needsAttentionReasons({ ...clean, incompleteFormCount: 1 }, TODAY);
+    expect(one.detail).toBe("1 form");
+  });
+});
+
+describe("missed visit", () => {
+  it("fires on a count or a flag", () => {
+    expect(keys({ ...clean, missedVisitCount: 1 })).toEqual(["missed_visit"]);
+    expect(keys({ ...clean, hasMissedVisit: true })).toEqual(["missed_visit"]);
+  });
+
+  it("clears when every visit is resolved", () => {
+    expect(keys({ ...clean, missedVisitCount: 0, hasMissedVisit: false })).toEqual([]);
+  });
+
+  it("is a missed date — urgent, and under the money", () => {
+    const [reason] = needsAttentionReasons({ ...clean, missedVisitCount: 2 }, TODAY);
+    expect(reason.label).toBe("Missed visit");
+    expect(reason.detail).toBe("2 visits");
+    expect(reason.urgent).toBe(true);
+    const [invoice] = needsAttentionReasons({ ...clean, openInvoiceCents: 90000 }, TODAY);
+    expect(invoice.weight).toBeGreaterThan(reason.weight);
+  });
+});
+
+describe("unread message", () => {
+  it("names the family who wrote it", () => {
+    const [reason] = needsAttentionReasons({ ...clean, unreadInboundCount: 1 }, TODAY);
+    expect(reason.key).toBe("unread_message");
+    expect(reason.label).toBe("Unread from Amara Alderman");
+    expect(reason.label).toContain(clean.name);
+    expect(reason.urgent).toBe(true);
+  });
+
+  it("clears once somebody opens it", () => {
+    expect(keys({ ...clean, unreadInboundCount: 0 })).toEqual([]);
+  });
+
+  it("counts the backlog", () => {
+    const [reason] = needsAttentionReasons({ ...clean, unreadInboundCount: 3 }, TODAY);
+    expect(reason.detail).toBe("3 messages");
+  });
+
+  it("falls back to the plain label when there is no name to use", () => {
+    expect(reasonLabel("unread_message")).toBe("Unread message");
+    expect(reasonLabel("unread_message", { name: "  " })).toBe("Unread message");
+    expect(reasonLabel("open_invoice", { name: "Maya Chen" })).toBe("Open invoice");
+  });
+});
+
+/**
+ * TOK-53's model has to survive four new rules: a family with old findings and new ones
+ * is still one row, named once, worst first.
+ */
+describe("one row per family holds with the TOK-58 rules", () => {
+  const maya: NeedsAttentionInput = {
+    ...clean,
+    clientId: "maya",
+    name: "Maya Chen",
+    stage: "active_care",
+    reviewed: false,
+    openInvoiceCents: 90000,
+    lastContactAt: daysAgo(12),
+    missedVisitCount: 1,
+    unreadInboundCount: 2,
+    incompleteFormCount: 3,
+  };
+
+  it("collapses six findings into one Maya, sorted by weight", () => {
+    const queue = needsAttentionRows([maya, { ...clean, clientId: "quiet", name: "Quiet" }], TODAY);
+    expect(queue).toHaveLength(1);
+    expect(queue[0].name).toBe("Maya Chen");
+    expect(queue[0].reasons.map((r) => r.key)).toEqual([
+      "open_invoice",
+      "missed_visit",
+      "no_contact",
+      "unread_message",
+      "forms_incomplete",
+      "unreviewed",
+    ]);
+    const weights = queue[0].reasons.map((r) => r.weight);
+    expect([...weights].sort((a, b) => b - a)).toEqual(weights);
+  });
+
+  it("prints the name once and the reasons as one short list", () => {
+    const [row] = needsAttentionRows([maya], TODAY);
+    expect(reasonSummary(row)).toBe(
+      `Open invoice · Missed visit · No word in ${NEEDS_ATTENTION_NO_CONTACT_DAYS} days · ` +
+        "Unread from Maya Chen · Forms still open · Not reviewed",
+    );
+    expect(reasonSummary(row).match(/Maya Chen/g)).toHaveLength(1);
+    expect(row.href).toBe("/doula/clients/maya");
+    expect(row.score).toBe(row.reasons.reduce((sum, r) => sum + r.weight, 0));
+  });
+
+  it("keeps the softest nudge out of a row that already says plenty", () => {
+    expect(
+      needsAttentionReasons({ ...maya, stage: "outreach_sent", followUpDueOn: null }, TODAY)
+        .map((r) => r.key),
+    ).not.toContain("intake_nudge");
   });
 });

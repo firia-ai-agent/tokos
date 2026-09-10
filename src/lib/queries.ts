@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { addDays, differenceInCalendarWeeks, format, startOfMonth, subMonths } from "date-fns";
 import { getDb } from "@/db";
@@ -30,7 +30,9 @@ import { clientChrome } from "@/lib/client-brand";
 import { formatCents } from "@/lib/money";
 import { isOpenLeadStage, migrateStage, type PipelineStageName } from "@/lib/pipeline";
 import { homeCaseloadHint, type ShellPersona } from "@/lib/shell-persona";
-import { familyTemplates, staffTemplates } from "@/lib/form-audience";
+import { FAMILY_AUDIENCE, familyTemplates, staffTemplates } from "@/lib/form-audience";
+import { isMissedVisit, MISSED_VISIT_STATUS } from "@/lib/calendar";
+import { attentionInputOf } from "@/lib/lead-board";
 import {
   needsAttentionRows,
   type NeedsAttentionInput,
@@ -339,7 +341,7 @@ export async function clientChecklist(organizationId: string, clientId: string) 
         eq(formAssignments.organizationId, organizationId),
         eq(formAssignments.clientId, clientId),
         eq(formAssignments.status, "incomplete"),
-        eq(formTemplates.audience, "family"),
+        eq(formTemplates.audience, FAMILY_AUDIENCE),
       ),
     );
   const [openInvoices] = await db
@@ -743,6 +745,15 @@ export async function clientPortalChrome(organizationId: string) {
 
 /* ------------------------------------------------------------- TOK-49 CRM board ---- */
 
+/** A `group by client_id, count(*)` read as a lookup. Drizzle counts come back as text. */
+function countByClient(rows: readonly { clientId: string | null; n: unknown }[]) {
+  const byClient = new Map<string, number>();
+  for (const row of rows) {
+    if (row.clientId) byClient.set(row.clientId, Number(row.n ?? 0));
+  }
+  return byClient;
+}
+
 /**
  * One row per family, with everything the dense pipeline list renders (TOK-49).
  *
@@ -767,6 +778,12 @@ export type LeadBoardRow = {
    * rules everything else is, rather than by a second hand-rolled list in the shell.
    */
   ledger: ClientLedger;
+  /** Family-audience form assignments still `incomplete` (TOK-58). */
+  incompleteFormCount: number;
+  /** Past visits nobody resolved, plus anything marked a no-show (TOK-58). */
+  missedVisitCount: number;
+  /** Messages this family sent that no one on staff has opened (TOK-58). */
+  unreadInboundCount: number;
 };
 
 export async function leadBoard(
@@ -835,6 +852,69 @@ export async function leadBoard(
     noteRows.map((row) => [row.clientId, row.at ? new Date(row.at) : null]),
   );
 
+  // The three counted facts behind TOK-58's rules, one grouped read each rather than a
+  // query per family. All three are facts the rules module is handed — it stays pure, and
+  // the counting stays here where the org scope is.
+  const now = new Date();
+  const [formRows, unreadRows, visitRows] = clientIds.length
+    ? await Promise.all([
+        // Family-audience only: a staff visit note or a Birth Log assigned against this
+        // client is the practice's own paperwork, never a form the family owes (TOK-50).
+        db
+          .select({ clientId: formAssignments.clientId, n: count() })
+          .from(formAssignments)
+          .innerJoin(formTemplates, eq(formTemplates.id, formAssignments.templateId))
+          .where(
+            and(
+              eq(formAssignments.organizationId, organizationId),
+              inArray(formAssignments.clientId, clientIds),
+              eq(formAssignments.status, "incomplete"),
+              eq(formTemplates.audience, FAMILY_AUDIENCE),
+            ),
+          )
+          .groupBy(formAssignments.clientId),
+        // Inbound only. An unread outbound message is the family's to read; counting it
+        // here would put someone else's inbox on a doula's queue.
+        db
+          .select({ clientId: portalMessages.clientId, n: count() })
+          .from(portalMessages)
+          .where(
+            and(
+              eq(portalMessages.organizationId, organizationId),
+              inArray(portalMessages.clientId, clientIds),
+              eq(portalMessages.direction, "inbound"),
+              sql`${portalMessages.readAt} is null`,
+            ),
+          )
+          .groupBy(portalMessages.clientId),
+        // Anything that could be a missed visit — already past, or marked a no-show at any
+        // date. `isMissedVisit` makes the call, so the calendar's vocabulary lives in one
+        // place and this read only has to be a superset of it.
+        db
+          .select({
+            clientId: calendarEvents.clientId,
+            type: calendarEvents.type,
+            status: calendarEvents.status,
+            endsAt: calendarEvents.endsAt,
+          })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.organizationId, organizationId),
+              inArray(calendarEvents.clientId, clientIds),
+              or(lt(calendarEvents.endsAt, now), eq(calendarEvents.status, MISSED_VISIT_STATUS)),
+            ),
+          ),
+      ])
+    : [[], [], []];
+  const incompleteFormsOf = countByClient(formRows);
+  const unreadInboundOf = countByClient(unreadRows);
+  const missedVisitsOf = new Map<string, number>();
+  for (const event of visitRows) {
+    if (!event.clientId || !isMissedVisit(event, now)) continue;
+    missedVisitsOf.set(event.clientId, (missedVisitsOf.get(event.clientId) ?? 0) + 1);
+  }
+
   // Money, in the same shape Home's cards already use. Two scoped reads rather than a
   // query per family, and the exact function that builds the dense card's ledger, so the
   // bell, the board and Home cannot disagree about what a family owes.
@@ -881,26 +961,22 @@ export async function leadBoard(
       ownerName: row.ownerName ?? null,
       lastNoteAt: lastNoteOf.get(row.client.id) ?? null,
       ledger: ledgers[row.client.id] ?? emptyLedger,
+      incompleteFormCount: incompleteFormsOf.get(row.client.id) ?? 0,
+      missedVisitCount: missedVisitsOf.get(row.client.id) ?? 0,
+      unreadInboundCount: unreadInboundOf.get(row.client.id) ?? 0,
     });
   }
 
   return [...byClient.values()];
 }
 
-/** A board row read as a Needs Attention input. One place, so the rules see one shape. */
+/**
+ * A board row read as a Needs Attention input. One place, so the rules see one shape —
+ * and one implementation, in `lead-board`, so the board's own tabs and counts are built
+ * from exactly the facts the bell and Home are built from.
+ */
 export function attentionInput(row: LeadBoardRow): NeedsAttentionInput {
-  return {
-    clientId: row.client.id,
-    name: row.client.displayName,
-    stage: row.stage,
-    followUpDueOn: row.client.followUpDueOn,
-    reviewed: row.client.reviewed,
-    hasPrimaryDoula: Boolean(row.primaryDoulaUserId),
-    stageEnteredAt: row.stageEnteredAt,
-    lastNoteAt: row.lastNoteAt,
-    unsignedAgreementCents: row.ledger.unsignedCents,
-    openInvoiceCents: row.ledger.outstandingCents,
-  };
+  return attentionInputOf(row);
 }
 
 /** The queue itself: one row per family, worst first, reasons attached. */

@@ -139,16 +139,17 @@ describe("the family reads are audience-filtered (defence in depth)", () => {
 
   it("filters every read that counts a family's open forms", () => {
     const queries = read("src", "lib", "queries.ts");
-    // Home used to count these a second time for its own flat alert list; TOK-53 deleted
-    // that list, so `clientChecklist` is the one count left. Rather than assert a number
-    // of filters, find every count of `formAssignments` in the file and insist each one
-    // reached the template — a new read added without the join fails here.
-    const counts = queries.match(
-      /\.select\(\{ n: count\(\) \}\)\s*\.from\(formAssignments\)[\s\S]*?\n    \);/g,
-    );
-    expect(counts).toHaveLength(1);
-    for (const block of counts ?? []) {
-      expect(block).toContain('eq(formTemplates.audience, "family")');
+    // Two counts now: the family's own checklist, and the grouped one behind the Needs
+    // Attention "Forms still open" rule (TOK-58). Rather than assert a number of filters,
+    // find every count of `formAssignments` in the file and insist each one reached the
+    // template — a new read added without the join fails here.
+    const counts = [
+      ...queries.matchAll(/\.select\(\{[^}]*count\(\)[^}]*\}\)\s*\.from\(formAssignments\)/g),
+    ];
+    expect(counts).toHaveLength(2);
+    for (const match of counts) {
+      const block = queries.slice(match.index ?? 0, (match.index ?? 0) + 600);
+      expect(block).toContain("eq(formTemplates.audience, FAMILY_AUDIENCE)");
     }
   });
 

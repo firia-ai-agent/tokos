@@ -447,6 +447,34 @@ export async function listSchedule(input: {
   return { upcoming, past, timeOff };
 }
 
+/**
+ * A visit that never got resolved (TOK-58).
+ *
+ * `calendar_events.status` starts at `scheduled` and is meant to move: canceled when it is
+ * called off, `no_show` when nobody came. Nothing moves it when a visit simply happens and
+ * the practice forgets the calendar, which is the case a Needs Attention queue exists for —
+ * so a past visit still sitting in an unresolved status reads as missed, exactly as a
+ * marked `no_show` does. A `no_show` counts whatever the clock says; every other status
+ * has to be in the past first, because a booking next Tuesday is not a problem today.
+ *
+ * Canceled visits and time off are never missed: one was called off on purpose and the
+ * other is not a visit at all.
+ */
+export const MISSED_VISIT_STATUS = "no_show";
+export const UNRESOLVED_VISIT_STATUSES = ["scheduled", "unconfirmed"] as const;
+
+export function isMissedVisit(
+  event: { type?: string | null; status?: string | null; endsAt: Date | string },
+  now: Date = new Date(),
+): boolean {
+  if (event.type === TIME_OFF_TYPE) return false;
+  const status = (event.status ?? "").trim();
+  if (status === MISSED_VISIT_STATUS) return true;
+  if (!(UNRESOLVED_VISIT_STATUSES as readonly string[]).includes(status)) return false;
+  const endsAt = event.endsAt instanceof Date ? event.endsAt : new Date(event.endsAt);
+  return !Number.isNaN(endsAt.getTime()) && endsAt < now;
+}
+
 /** Client-facing consults, split at now. */
 export async function listClientConsults(input: {
   organizationId: string;

@@ -25,7 +25,9 @@ function row(over: Partial<LeadRowLike["client"]> & { id: string; displayName: s
       source: "website",
       insurance: "unknown",
       followUpDueOn: null,
-      lastContactAt: null,
+      // Spoken to this week: a hand-built row is "clean" only if it clears TOK-58's
+      // no-contact rule too.
+      lastContactAt: new Date("2026-09-08T12:00:00Z"),
       reviewed: true,
       ownerUserId: null,
       ...over,
@@ -166,6 +168,39 @@ describe("filters", () => {
       "money",
     ]);
     expect(leadBoardCounts([owing], TODAY).attention).toBe(1);
+  });
+
+  /** TOK-58: the four new facts reach the same rules down the same one path. */
+  it("puts a quiet, unread, unfinished or missed-visit family in Needs attention", () => {
+    const quiet = row(
+      { id: "maya", displayName: "Maya Chen", followUpDueOn: "2026-09-25" },
+      { stage: "active_care" },
+    );
+    expect(filterLeadRows([quiet], q({ tab: "attention" }), TODAY)).toEqual([]);
+
+    for (const fact of [
+      { unreadInboundCount: 1 },
+      { incompleteFormCount: 2 },
+      { missedVisitCount: 1 },
+    ]) {
+      const flagged = { ...quiet, ...fact };
+      expect(
+        filterLeadRows([flagged], q({ tab: "attention" }), TODAY).map((r) => r.client.id),
+      ).toEqual(["maya"]);
+      expect(leadBoardCounts([flagged], TODAY).attention).toBe(1);
+    }
+
+    // And the silence itself, measured off the client row the board already carries.
+    const gone = row(
+      {
+        id: "maya",
+        displayName: "Maya Chen",
+        followUpDueOn: "2026-09-25",
+        lastContactAt: new Date("2026-08-20T12:00:00Z"),
+      },
+      { stage: "active_care" },
+    );
+    expect(leadBoardCounts([gone], TODAY).attention).toBe(1);
   });
 });
 

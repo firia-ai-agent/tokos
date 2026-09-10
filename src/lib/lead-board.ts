@@ -50,6 +50,14 @@ export type LeadRowLike = {
    * still build a row by hand; absent simply means "no money is waiting on this family".
    */
   ledger?: { outstandingCents?: number; unsignedCents?: number };
+  /**
+   * The three counted facts behind TOK-58's new rules — family forms still open, visits
+   * that came and went unresolved, and messages the family sent that nobody has read.
+   * Optional for the same reason the ledger is: absent means none, not unknown.
+   */
+  incompleteFormCount?: number;
+  missedVisitCount?: number;
+  unreadInboundCount?: number;
 };
 
 export type LeadQuery = {
@@ -127,7 +135,14 @@ export function isFiltered(query: LeadQuery): boolean {
   );
 }
 
-function attentionInputOf(row: LeadRowLike): NeedsAttentionInput {
+/**
+ * A board row read as a Needs Attention input.
+ *
+ * Exported because the board, the bell, Home and the clients list all have to ask the
+ * rules the same question about the same row — this was copied into three call sites once,
+ * and a new fact wired into two of them is a queue that disagrees with itself.
+ */
+export function attentionInputOf(row: LeadRowLike): NeedsAttentionInput {
   return {
     clientId: row.client.id,
     name: row.client.displayName,
@@ -139,6 +154,10 @@ function attentionInputOf(row: LeadRowLike): NeedsAttentionInput {
     lastNoteAt: row.lastNoteAt,
     unsignedAgreementCents: row.ledger?.unsignedCents,
     openInvoiceCents: row.ledger?.outstandingCents,
+    lastContactAt: row.client.lastContactAt,
+    incompleteFormCount: row.incompleteFormCount,
+    missedVisitCount: row.missedVisitCount,
+    unreadInboundCount: row.unreadInboundCount,
   };
 }
 

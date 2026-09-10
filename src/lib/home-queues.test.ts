@@ -44,6 +44,8 @@ const overdue: NeedsAttentionInput = {
   hasPrimaryDoula: false,
   stageEnteredAt: new Date("2026-09-02T12:00:00Z"),
   lastNoteAt: null,
+  // Contacted this week, so the TOK-58 no-contact rule is not what these rows are about.
+  lastContactAt: new Date("2026-09-09T12:00:00Z"),
 };
 
 const quiet: NeedsAttentionInput = {

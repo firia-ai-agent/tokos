@@ -25,6 +25,12 @@ export type FormAudience = (typeof FORM_AUDIENCES)[number];
 /** The default an unmarked template gets: the column defaults to `family` in the DB. */
 export const DEFAULT_FORM_AUDIENCE: FormAudience = "family";
 
+/**
+ * The audience a family's own paperwork carries, for the SQL side of the same rule: a
+ * query counting what a family still owes filters on this rather than on a bare string.
+ */
+export const FAMILY_AUDIENCE: FormAudience = "family";
+
 export function isFormAudience(value: unknown): value is FormAudience {
   return typeof value === "string" && (FORM_AUDIENCES as readonly string[]).includes(value);
 }
