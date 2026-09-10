@@ -18,6 +18,7 @@ import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
 import { requireStaff, requireStaffClient } from "@/lib/tenancy";
 import { clearProviderPhoto, saveProviderPhoto } from "@/lib/provider-photo";
+import { ensureProviderProfile } from "@/lib/provider-profile";
 import type { PhotoErrorCode } from "@/lib/photo";
 import { appUrl } from "@/lib/env";
 
@@ -217,6 +218,12 @@ export async function removeTimeOffAction(formData: FormData) {
 export async function saveProfileAction(formData: FormData) {
   const staff = await requireStaff();
   const db = getDb();
+  // A doula whose profile was never seeded would otherwise update nothing and be told so
+  // by an empty form on the way back, so the row is created on first save (TOK-63).
+  const profile = await ensureProviderProfile({
+    organizationId: staff.organizationId,
+    userId: staff.userId,
+  });
   await db
     .update(providerProfiles)
     .set({
@@ -226,12 +233,7 @@ export async function saveProfileAction(formData: FormData) {
       ratesLabel: String(formData.get("ratesLabel") ?? ""),
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(providerProfiles.userId, staff.userId),
-        eq(providerProfiles.organizationId, staff.organizationId),
-      ),
-    );
+    .where(eq(providerProfiles.id, profile.id));
 
   // The photo rides along on the same form, but an untouched file input still submits an
   // empty File, so only a non-empty pick counts as an upload.

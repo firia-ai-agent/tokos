@@ -1,7 +1,5 @@
-import { eq } from "drizzle-orm";
 import QRCode from "qrcode";
-import { getDb } from "@/db";
-import { providerProfiles } from "@/db/schema";
+import { findProviderProfile } from "@/lib/provider-profile";
 import { requireStaff } from "@/lib/tenancy";
 import { removeProfilePhotoAction, saveProfileAction } from "@/app/actions/doula";
 import { appUrl } from "@/lib/env";
@@ -21,14 +19,14 @@ export default async function DoulaProfilePage({
 }) {
   const staff = await requireStaff();
   const photoError = photoErrorMessage((await searchParams).photoError);
-  const db = getDb();
-  const [profile] = await db
-    .select()
-    .from(providerProfiles)
-    .where(eq(providerProfiles.userId, staff.userId))
-    .limit(1);
-  const shareUrl = `${appUrl()}/p/${profile?.slug ?? "maya-chen"}`;
-  const qr = await QRCode.toDataURL(shareUrl, { margin: 1, width: 200 });
+  const profile = await findProviderProfile({
+    organizationId: staff.organizationId,
+    userId: staff.userId,
+  });
+  // Before the first save there is no public page yet. Falling back to another doula's slug
+  // would put her face behind this doula's QR code, so the card says so instead (TOK-63).
+  const shareUrl = profile ? `${appUrl()}/p/${profile.slug}` : null;
+  const qr = shareUrl ? await QRCode.toDataURL(shareUrl, { margin: 1, width: 200 }) : null;
 
   return (
     <div className="space-y-5">
@@ -95,17 +93,25 @@ export default async function DoulaProfilePage({
           <p className="text-[0.62rem] uppercase tracking-[0.24em] text-cloud/75">Intro QR</p>
         </div>
         <CardContent className="space-y-3 pt-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qr} alt="Profile QR" className="w-40 rounded-lg ring-1 ring-teal/15" />
-          <p className="break-all text-xs text-muted-foreground">{shareUrl}</p>
-          <a
-            href={shareUrl}
-            className="inline-flex text-[13px] font-semibold text-coral hover:underline"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open public profile →
-          </a>
+          {qr && shareUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qr} alt="Profile QR" className="w-40 rounded-lg ring-1 ring-teal/15" />
+              <p className="break-all text-xs text-muted-foreground">{shareUrl}</p>
+              <a
+                href={shareUrl}
+                className="inline-flex text-[13px] font-semibold text-coral hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open public profile →
+              </a>
+            </>
+          ) : (
+            <p className="text-[13px] text-muted-foreground">
+              Save your profile once and your public page and QR code appear here.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

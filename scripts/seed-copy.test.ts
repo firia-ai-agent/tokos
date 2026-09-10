@@ -66,6 +66,15 @@ describe("seeded roster (TOK-34 D8)", () => {
     expect(demoLoginHintLines().join("\n")).toContain("priya@novabirthpartners.com");
   });
 
+  it("gives her a provider profile of her own, so her first photo has somewhere to go", () => {
+    // TOK-63: only Maya and Cedar's Sam were seeded a `provider_profiles` row, so Priya's
+    // upload dead-ended on `no_profile`. The row is the fix; the slug has to be hers.
+    const slugs = [...seed.matchAll(/slug: "([^"]+)",/g)].map((match) => match[1]!);
+    expect(slugs).toContain("priya-raman");
+    expect(new Set(slugs).size).toBe(slugs.length);
+    expect(seed).toMatch(/userId: PRIYA_USER_ID,\n\s+slug: "priya-raman",/);
+  });
+
   it("takes every seeded identity from the shared roster rather than retyping it", () => {
     for (const account of DEMO_ACCOUNTS) {
       expect(seed).not.toContain(`"${account.email}"`);

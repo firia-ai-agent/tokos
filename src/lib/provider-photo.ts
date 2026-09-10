@@ -4,6 +4,7 @@ import { fileObjects, providerProfiles } from "@/db/schema";
 import { putObject } from "@/lib/adapters/s3";
 import { writeAudit } from "@/lib/audit";
 import { newId } from "@/lib/ids";
+import { ensureProviderProfile, findProviderProfile } from "@/lib/provider-profile";
 import {
   MAX_PHOTO_BYTES,
   PROVIDER_PHOTO_PURPOSE,
@@ -17,7 +18,8 @@ export type PhotoResult = { ok: true; fileId: string } | { ok: false; code: Phot
 
 /**
  * Stores a provider photo and repoints the profile at it, replacing any previous photo.
- * Callers must have already proven the actor owns this profile.
+ * Callers must have already proven the actor is staff in this org — the profile row is
+ * created here if she does not have one yet, so `no_profile` cannot come back (TOK-63).
  */
 export async function saveProviderPhoto(input: {
   organizationId: string;
@@ -36,17 +38,12 @@ export async function saveProviderPhoto(input: {
   if (!contentType) return { ok: false, code: "unreadable" };
 
   const db = getDb();
-  const [profile] = await db
-    .select()
-    .from(providerProfiles)
-    .where(
-      and(
-        eq(providerProfiles.userId, input.userId),
-        eq(providerProfiles.organizationId, input.organizationId),
-      ),
-    )
-    .limit(1);
-  if (!profile) return { ok: false, code: "no_profile" };
+  // A doula the caller has already vouched for is entitled to a profile, so a missing row
+  // is created here rather than turned into a dead end on her first upload (TOK-63).
+  const profile = await ensureProviderProfile({
+    organizationId: input.organizationId,
+    userId: input.userId,
+  });
 
   const fileId = newId();
   const key = photoObjectKey({ organizationId: input.organizationId, fileId, contentType });
@@ -87,18 +84,10 @@ export async function saveProviderPhoto(input: {
   return { ok: true, fileId };
 }
 
+/** No profile means no photo to remove, so this stays a read — nothing is created here. */
 export async function clearProviderPhoto(input: { organizationId: string; userId: string }) {
   const db = getDb();
-  const [profile] = await db
-    .select()
-    .from(providerProfiles)
-    .where(
-      and(
-        eq(providerProfiles.userId, input.userId),
-        eq(providerProfiles.organizationId, input.organizationId),
-      ),
-    )
-    .limit(1);
+  const profile = await findProviderProfile(input);
   if (!profile?.photoFileId) return;
 
   await db

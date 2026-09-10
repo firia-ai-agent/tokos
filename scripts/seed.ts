@@ -254,6 +254,22 @@ async function main() {
     photoFile: "maya-chen.jpg",
   });
 
+  // Priya has her own public page too (TOK-63). Without this row her first photo upload
+  // had nothing to attach to, so a second doula on a real agency hit a dead end the
+  // founder never could. There is no checked-in headshot for her, so the page falls back
+  // to initials until she uploads one — which is exactly the path this row unblocks.
+  await db.insert(providerProfiles).values({
+    id: "66666666-6666-4666-8666-666666666668",
+    organizationId: ORG_ID,
+    userId: PRIYA_USER_ID,
+    slug: "priya-raman",
+    headline: "Overnight and postpartum care, plus births as backup",
+    bio: "I take the nights and the early weeks — feeding, rest, and the small practical things that make a house work again. I also stand in as backup for births, so a family I have met is never handed to a stranger at 3am.",
+    serviceArea: "Arlington, Falls Church, and McLean",
+    ratesLabel: "Overnight care from $45/hr",
+    published: true,
+  });
+
   const edd = new Date();
   edd.setDate(edd.getDate() + 21);
 
@@ -1472,7 +1488,9 @@ ${logins}
 
 ${roster}
   Cedar client id: ${CEDAR_CLIENT_ID}
-  Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25)
+  Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25),
+           /p/priya-raman (no seeded headshot — she is the doula whose own upload the
+           create-on-demand path had to stop dead-ending on, TOK-63)
   Pipeline: Jordan fit_confirmed, Avery outreach_sent (overdue follow-up, unmatched),
            Noor consult_done with no note, Tamsin new_lead 9 days overdue — the four
            shapes Needs Attention exists for (TOK-49)
