@@ -18,6 +18,9 @@ import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+/** `?template=` value that means every row is closed. No template id can collide with it. */
+const COLLAPSED = "none";
+
 export default async function DoulaEmailTemplatesPage({
   searchParams,
 }: {
@@ -38,8 +41,13 @@ export default async function DoulaEmailTemplatesPage({
     .where(eq(organizations.id, staff.organizationId))
     .limit(1);
 
+  // No `?template=` at all means "just arrived" — the first trigger opens so the page is
+  // never a wall of closed rows. Once she has clicked, the query is the truth, and the
+  // sentinel below lets her close the last open one instead of it springing back.
   const selected =
-    templates.find((template) => template.id === query.template) ?? templates[0] ?? null;
+    query.template === undefined
+      ? templates[0] ?? null
+      : templates.find((template) => template.id === query.template) ?? null;
 
   const notice =
     query.error === "vars"
@@ -84,6 +92,11 @@ export default async function DoulaEmailTemplatesPage({
         </p>
       ) : null}
 
+      {/* One accordion, not a list above and an editor below (TOK-57). Every trigger is
+          one line until you open it, and the one you opened holds its editor in place —
+          so the page is as long as the work you are doing, not as long as the catalogue.
+          The open row is the `?template=` query, so it survives a save and a reload and
+          needs no client state. */}
       <section className="rounded-xl bg-card ring-1 ring-teal/15">
         <div className="border-b border-teal/10 px-5 py-3.5">
           <h2 className="font-heading text-xl text-teal-ink">Triggers</h2>
@@ -98,63 +111,90 @@ export default async function DoulaEmailTemplatesPage({
           </p>
         ) : (
           <ul className="divide-y divide-teal/10">
-            {templates.map((template) => (
-              <li key={template.id}>
-                <Link
-                  href={`/doula/settings/email?template=${template.id}`}
-                  aria-current={selected?.id === template.id ? "true" : undefined}
-                  className={cn(
-                    "flex flex-wrap items-center justify-between gap-3 px-5 py-3 transition-colors",
-                    selected?.id === template.id ? "bg-teal/8" : "hover:bg-secondary",
-                  )}
-                >
-                  <div className="min-w-0">
-                    <p className="text-[14px] font-semibold text-teal-ink">
-                      {template.name}
-                      <span className="ml-2 font-mono text-[11.5px] font-normal text-muted-foreground">
-                        {template.triggerKey}
-                      </span>
-                    </p>
-                    <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
-                      {template.subjectTpl}
-                    </p>
-                  </div>
-                  <Badge
-                    variant="secondary"
-                    className={
-                      template.enabled ? "bg-teal/12 text-teal-ink" : "bg-coral/12 text-coral"
+            {templates.map((template) => {
+              const open = selected?.id === template.id;
+              return (
+                <li key={template.id} id={`tpl-${template.id}`}>
+                  <Link
+                    href={
+                      open
+                        ? `/doula/settings/email?template=${COLLAPSED}`
+                        : `/doula/settings/email?template=${template.id}#tpl-${template.id}`
                     }
+                    aria-expanded={open}
+                    aria-controls={`tpl-panel-${template.id}`}
+                    className={cn(
+                      "flex flex-wrap items-center justify-between gap-3 px-5 py-3 transition-colors",
+                      open ? "bg-teal/8" : "hover:bg-secondary",
+                    )}
                   >
-                    {template.enabled ? `Enabled · v${template.version}` : "Disabled"}
-                  </Badge>
-                </Link>
-              </li>
-            ))}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "text-[11px] text-muted-foreground transition-transform",
+                          open ? "rotate-90" : undefined,
+                        )}
+                      >
+                        &#9654;
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-teal-ink">
+                          {template.name}
+                          <span className="ml-2 font-mono text-[11.5px] font-normal text-muted-foreground">
+                            {template.triggerKey}
+                          </span>
+                        </p>
+                        <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
+                          {template.subjectTpl}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant="secondary"
+                      className={
+                        template.enabled ? "bg-teal/12 text-teal-ink" : "bg-coral/12 text-coral"
+                      }
+                    >
+                      {template.enabled ? `Enabled · v${template.version}` : "Disabled"}
+                    </Badge>
+                  </Link>
+
+                  {open && selected ? (
+                    <div
+                      id={`tpl-panel-${template.id}`}
+                      className="border-t border-teal/10 bg-cloud/50 px-5 py-4"
+                    >
+                      <EmailTemplateEditor
+                        key={selected.id}
+                        template={{
+                          id: selected.id,
+                          name: selected.name,
+                          triggerKey: selected.triggerKey,
+                          enabled: selected.enabled,
+                          fromName: selected.fromName,
+                          replyTo: selected.replyTo,
+                          subjectTpl: selected.subjectTpl,
+                          bodyTextTpl: selected.bodyTextTpl,
+                          bodyHtmlTpl: selected.bodyHtmlTpl,
+                          version: selected.version,
+                        }}
+                        allowed={allowedVars(selected.triggerKey)}
+                        sample={sampleVars(selected.triggerKey, org?.name ?? "Your practice")}
+                        description={
+                          TRIGGER_DESCRIPTIONS[selected.triggerKey] ?? "Transactional mail."
+                        }
+                        canEdit={manages}
+                        embedded
+                      />
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
-
-      {selected ? (
-        <EmailTemplateEditor
-          key={selected.id}
-          template={{
-            id: selected.id,
-            name: selected.name,
-            triggerKey: selected.triggerKey,
-            enabled: selected.enabled,
-            fromName: selected.fromName,
-            replyTo: selected.replyTo,
-            subjectTpl: selected.subjectTpl,
-            bodyTextTpl: selected.bodyTextTpl,
-            bodyHtmlTpl: selected.bodyHtmlTpl,
-            version: selected.version,
-          }}
-          allowed={allowedVars(selected.triggerKey)}
-          sample={sampleVars(selected.triggerKey, org?.name ?? "Your practice")}
-          description={TRIGGER_DESCRIPTIONS[selected.triggerKey] ?? "Transactional mail."}
-          canEdit={manages}
-        />
-      ) : null}
     </div>
   );
 }

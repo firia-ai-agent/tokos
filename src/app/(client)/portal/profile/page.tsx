@@ -3,6 +3,11 @@ import { getDb } from "@/db";
 import { clients } from "@/db/schema";
 import { requireClient } from "@/lib/tenancy";
 import { resolveAssignedDoulaName } from "@/lib/assigned-doula";
+import {
+  EMERGENCY_CONTACT_FIELDS,
+  EMERGENCY_CONTACT_SECTION_TITLE,
+  emergencyContact,
+} from "@/lib/emergency-contact";
 import { updateClientProfileAction } from "@/app/actions/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,6 +86,11 @@ export default async function ClientProfilePage({
     )
     .limit(1);
   if (!client) return null;
+
+  const emergency = emergencyContact({
+    name: client.alternateContactName,
+    phone: client.alternateContactPhone,
+  });
 
   return (
     <div className="max-w-2xl space-y-5">
@@ -167,21 +177,32 @@ export default async function ClientProfilePage({
           </div>
         </Section>
 
+        {/* Not "Alternate" any more (TOK-57). Birth work happens at 3am, and the person
+            a doula calls when she cannot reach you is the first thing she looks for — so
+            it is named for what it is, and asks for the number as well as the name. */}
         <Section
-          title="Alternate"
-          note={`Who ${doula.firstName} reaches if you cannot be reached.`}
+          title={EMERGENCY_CONTACT_SECTION_TITLE}
+          note={`Who ${doula.firstName} calls if she cannot reach you — a partner, a parent, a friend nearby.`}
         >
           <Field
-            name="alternateContactName"
-            label="Alternate contact"
+            name={EMERGENCY_CONTACT_FIELDS.name}
+            label="Their name"
             defaultValue={client.alternateContactName ?? ""}
+            autoComplete="off"
           />
           <Field
-            name="alternateContactPhone"
-            label="Alternate phone"
+            name={EMERGENCY_CONTACT_FIELDS.phone}
+            label="Their phone"
             defaultValue={client.alternateContactPhone ?? ""}
             type="tel"
+            autoComplete="off"
           />
+          {emergency.name && !emergency.reachable ? (
+            <p className="rounded-md bg-coral/10 px-2.5 py-1.5 text-[12.5px] text-coral ring-1 ring-coral/20">
+              Add {emergency.name}&apos;s number — a name on its own is not someone we can
+              call.
+            </p>
+          ) : null}
         </Section>
 
         <div className="flex flex-wrap items-center gap-3">

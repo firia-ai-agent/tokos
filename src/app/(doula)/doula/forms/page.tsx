@@ -5,6 +5,12 @@ import { formsHub, listOrgClients } from "@/lib/queries";
 import { audienceLabel, isStaffAudience } from "@/lib/form-audience";
 import { isSensitiveField } from "@/lib/forms";
 import {
+  familiesWithOpenForms,
+  groupAssignmentsByClient,
+  groupCountLabel,
+  isOverdue,
+} from "@/lib/forms-by-client";
+import {
   assignFormsToFamiliesAction,
   createFormTemplateAction,
   remindAssignmentAction,
@@ -45,6 +51,18 @@ export default async function DoulaFormsPage({
   const clients = await listOrgClients(staff.organizationId, staff.userId);
   const notice = NOTICES[query.error ?? ""] ?? NOTICES[query.created ?? ""];
   const sentCount = Number(query.sent ?? 0);
+
+  // The in-flight board is one row per family, most-owed first (TOK-57). Answered work
+  // stays reachable underneath her name, so nothing that was on the flat list is lost.
+  const groups = groupAssignmentsByClient(hub.assignments);
+  const openFamilies = familiesWithOpenForms(groups);
+  const completedByClient = new Map<string, typeof hub.assignments>();
+  for (const row of hub.assignments) {
+    if (row.assignment.status !== "complete") continue;
+    const rows = completedByClient.get(row.client.id) ?? [];
+    rows.push(row);
+    completedByClient.set(row.client.id, rows);
+  }
 
   const stats = [
     { label: "Family forms", value: hub.familyTemplates.length, tone: "ink" as const },
@@ -316,88 +334,166 @@ export default async function DoulaFormsPage({
         </article>
       </section>
 
+      {/* In flight, by family (TOK-57). The founder works family-by-family, not
+          form-by-form: "when you click on the client's name, it has a dropdown for all of
+          the different assignments that are incomplete." Each family is one row that says
+          how much she owes; open it and the forms are there with the same three actions
+          that were on the flat list. Plain `<details>` — a disclosure needs no JavaScript,
+          and several families can be open at once while a doula works down them. */}
       <section className="rounded-xl bg-card ring-1 ring-teal/15">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-teal/10 px-5 py-3.5">
           <div>
-            <h2 className="font-heading text-xl text-teal-ink">In flight</h2>
+            <h2 className="font-heading text-xl text-teal-ink">In flight, by family</h2>
             <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-              Every assignment in your practice, with answers once it is complete.
+              Who is still holding a form. Open a name to see hers.
             </p>
           </div>
-          <Badge variant="secondary" className="bg-teal/10 text-teal-ink">
-            {hub.assignments.length} total
+          <Badge
+            variant="secondary"
+            className={openFamilies > 0 ? "bg-coral/12 text-coral" : "bg-teal/10 text-teal-ink"}
+          >
+            {openFamilies > 0
+              ? `${openFamilies} famil${openFamilies === 1 ? "y" : "ies"} waiting`
+              : "All caught up"}
           </Badge>
         </div>
-        {hub.assignments.length === 0 ? (
+        {groups.length === 0 ? (
           <p className="px-5 py-8 text-sm text-muted-foreground">
             Nothing sent yet. Tick a form and a family above and send it.
           </p>
         ) : (
           <ul className="divide-y divide-teal/10">
-            {hub.assignments.map(({ assignment, template, client, submission }) => (
-              <li key={assignment.id} className="space-y-3 px-5 py-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[14px] font-semibold text-teal-ink">
-                      {template.title}
-                      <Link
-                        href={`/doula/clients/${client.id}`}
-                        className="ml-2 text-[13px] font-medium text-teal hover:underline"
-                      >
-                        {client.displayName}
-                      </Link>
-                    </p>
-                    <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-                      {assignment.assigneeRole === "doula"
-                        ? "For a visit"
-                        : assignment.assigneeRole === "client"
-                          ? "For the family"
-                          : "Either of us"}
-                      {assignment.dueAt ? ` · due ${format(assignment.dueAt, "MMM d")}` : ""}
-                      {submission ? ` · answered ${format(submission.submittedAt, "MMM d")}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <Badge
-                      variant="secondary"
-                      className={
-                        assignment.status === "complete"
-                          ? "bg-teal/12 text-teal-ink"
-                          : "bg-coral/12 text-coral"
-                      }
-                    >
-                      {assignment.status === "complete" ? "Complete" : "Incomplete"}
-                    </Badge>
-                    {assignment.status === "complete" ? (
-                      <form action={reopenFormAction}>
-                        <input type="hidden" name="assignmentId" value={assignment.id} />
-                        <Button type="submit" size="sm" variant="ghost">
-                          Reopen
-                        </Button>
-                      </form>
-                    ) : (
-                      <>
-                        <form action={remindAssignmentAction}>
-                          <input type="hidden" name="assignmentId" value={assignment.id} />
-                          <Button type="submit" size="sm" variant="outline">
-                            Send reminder
-                          </Button>
-                        </form>
-                        <Link
-                          href={`/doula/clients/${client.id}#forms`}
-                          className="rounded-md bg-coral/15 px-2.5 py-1 text-[12px] font-semibold text-coral hover:bg-coral/25"
+            {groups.map((group) => {
+              const answered = completedByClient.get(group.clientId) ?? [];
+              const open = group.incomplete.length > 0;
+              return (
+                <li key={group.clientId}>
+                  <details open={open} className="group">
+                    <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-5 py-3.5 hover:bg-cloud/60">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span
+                          aria-hidden
+                          className="text-[11px] text-muted-foreground transition-transform group-open:rotate-90"
                         >
-                          Co-complete
-                        </Link>
-                      </>
-                    )}
-                  </div>
-                </div>
-                {assignment.status === "complete" && submission ? (
-                  <FormAnswers schema={template.schemaJson} answers={submission.answersJson} />
-                ) : null}
-              </li>
-            ))}
+                          &#9654;
+                        </span>
+                        <span className="truncate text-[14px] font-semibold text-teal-ink">
+                          {group.clientName}
+                        </span>
+                        {group.overdueCount > 0 ? (
+                          <Badge variant="secondary" className="bg-coral/12 text-coral">
+                            {group.overdueCount} past due
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <span
+                        className={cn(
+                          "text-[12.5px] font-medium",
+                          open ? "text-coral" : "text-muted-foreground",
+                        )}
+                      >
+                        {groupCountLabel(group)}
+                        {group.completeCount > 0 ? (
+                          <span className="ml-1.5 font-normal text-muted-foreground">
+                            · {group.completeCount} answered
+                          </span>
+                        ) : null}
+                      </span>
+                    </summary>
+
+                    <div className="space-y-2 bg-cloud/50 px-5 py-3">
+                      {group.incomplete.map(({ assignment, template }) => (
+                        <div
+                          key={assignment.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card p-3 ring-1 ring-teal/10"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[13.5px] font-semibold text-teal-ink">
+                              {template.title}
+                            </p>
+                            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                              {assignment.assigneeRole === "doula"
+                                ? "For a visit"
+                                : assignment.assigneeRole === "client"
+                                  ? "For the family"
+                                  : "Either of us"}
+                              {assignment.dueAt ? (
+                                <span
+                                  className={
+                                    isOverdue(assignment) ? "font-medium text-coral" : undefined
+                                  }
+                                >
+                                  {` · due ${format(assignment.dueAt, "MMM d")}`}
+                                </span>
+                              ) : null}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <form action={remindAssignmentAction}>
+                              <input type="hidden" name="assignmentId" value={assignment.id} />
+                              <Button type="submit" size="sm" variant="outline">
+                                Send reminder
+                              </Button>
+                            </form>
+                            <Link
+                              href={`/doula/clients/${group.clientId}#forms`}
+                              className="rounded-md bg-coral/15 px-2.5 py-1 text-[12px] font-semibold text-coral hover:bg-coral/25"
+                            >
+                              Co-complete
+                            </Link>
+                          </div>
+                        </div>
+                      ))}
+
+                      {group.incomplete.length === 0 ? (
+                        <p className="text-[12.5px] text-muted-foreground">
+                          {group.completeCount > 0
+                            ? "Nothing outstanding — everything she was sent is answered."
+                            : "Nothing sent to her yet."}
+                        </p>
+                      ) : null}
+
+                      {answered.map(({ assignment, template, submission }) => (
+                        <details
+                          key={assignment.id}
+                          className="rounded-lg bg-card p-3 ring-1 ring-teal/10"
+                        >
+                          <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3">
+                            <span className="text-[13.5px] font-medium text-teal-ink">
+                              {template.title}
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <span className="text-[12.5px] text-muted-foreground">
+                                {submission
+                                  ? `answered ${format(submission.submittedAt, "MMM d")}`
+                                  : "answered"}
+                              </span>
+                              <Badge variant="secondary" className="bg-teal/12 text-teal-ink">
+                                Complete
+                              </Badge>
+                            </span>
+                          </summary>
+                          <div className="mt-3 space-y-3">
+                            {submission ? (
+                              <FormAnswers
+                                schema={template.schemaJson}
+                                answers={submission.answersJson}
+                              />
+                            ) : null}
+                            <form action={reopenFormAction}>
+                              <input type="hidden" name="assignmentId" value={assignment.id} />
+                              <Button type="submit" size="sm" variant="ghost">
+                                Reopen
+                              </Button>
+                            </form>
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  </details>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

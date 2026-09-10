@@ -36,6 +36,11 @@ import { StageStepper } from "@/components/brand/stage-stepper";
 import { LeadFieldsForm, LeadNotesFeed, LeadSummary } from "@/components/brand/lead-fields";
 import { unreadFor } from "@/lib/messages";
 import {
+  EMERGENCY_CONTACT_SECTION_TITLE,
+  emergencyContact,
+  emergencyContactLine,
+} from "@/lib/emergency-contact";
+import {
   COMPOSER_COPY,
   messagesHref,
   staffThreadCardHint,
@@ -206,7 +211,11 @@ export default async function ClientDetailPage({
   // What is still sendable to this family: family-audience templates she has no open
   // copy of, and handouts not already on her shelf. Family is the page, so the pickers
   // below carry no family dropdown at all (TOK-50 / CRM-FIRST §2A).
-  const sendable = await clientSendOptions(staff.organizationId, client.id);
+  const sendable = await clientSendOptions(staff.organizationId, client.id, staff.userId);
+  const emergency = emergencyContact({
+    name: client.alternateContactName,
+    phone: client.alternateContactPhone,
+  });
   const familyName = client.preferredName ?? client.displayName;
   // One empty state for this family, shared with the inbox pane (TOK-56).
   const threadEmpty = staffThreadEmpty(familyName);
@@ -218,6 +227,19 @@ export default async function ClientDetailPage({
           <h2 className="font-heading text-3xl text-teal-ink">{client.displayName}</h2>
           <p className="text-sm text-muted-foreground">
             {client.email} · due {client.edd ?? "—"}
+          </p>
+          {/* Who to call at 3am, on the record rather than three clicks away (TOK-57).
+              The family owns this field from her portal profile. */}
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+            <span className="font-medium text-teal-ink/70">
+              {EMERGENCY_CONTACT_SECTION_TITLE}:
+            </span>{" "}
+            <span className={emergency.reachable ? undefined : "text-coral"}>
+              {emergencyContactLine({
+                name: client.alternateContactName,
+                phone: client.alternateContactPhone,
+              })}
+            </span>
           </p>
         </div>
         <Badge className="text-sm">{staffStageLabel(persona, funnel.stage)}</Badge>

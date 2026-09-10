@@ -16,6 +16,7 @@ import {
   resourceShares,
 } from "@/db/schema";
 import { SlotUnavailableError, type SlotRejection } from "@/lib/calendar";
+import { EMERGENCY_CONTACT_FIELDS } from "@/lib/emergency-contact";
 import { isFamilyAudience } from "@/lib/form-audience";
 import { readAnswers } from "@/lib/forms";
 import { beginCheckout, bookConsult, logClientContact, markAgreementSigned } from "@/lib/funnel";
@@ -229,8 +230,10 @@ export async function updateClientProfileAction(formData: FormData) {
       city: text("city"),
       region: text("region"),
       postalCode: text("postalCode"),
-      alternateContactName: text("alternateContactName"),
-      alternateContactPhone: text("alternateContactPhone"),
+      // Named "Emergency contact" on the portal now (TOK-57); the columns keep their
+      // original names, so the field constants are what the two sides agree on.
+      alternateContactName: text(EMERGENCY_CONTACT_FIELDS.name),
+      alternateContactPhone: text(EMERGENCY_CONTACT_FIELDS.phone),
       updatedAt: new Date(),
     })
     .where(

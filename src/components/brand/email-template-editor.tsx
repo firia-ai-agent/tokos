@@ -32,12 +32,18 @@ export function EmailTemplateEditor({
   sample,
   description,
   canEdit,
+  embedded = false,
 }: {
   template: EditableTemplate;
   allowed: string[];
   sample: Record<string, string>;
   description: string;
   canEdit: boolean;
+  /**
+   * Rendered inside the accordion row that already names this trigger (TOK-57), so the
+   * editor drops its own card frame and heading rather than saying the name twice.
+   */
+  embedded?: boolean;
 }) {
   const [subject, setSubject] = useState(template.subjectTpl);
   const [bodyText, setBodyText] = useState(template.bodyTextTpl);
@@ -46,15 +52,19 @@ export function EmailTemplateEditor({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
-      <section className="rounded-xl bg-card ring-1 ring-teal/15">
-        <div className="border-b border-teal/10 px-5 py-3.5">
-          <h2 className="font-heading text-xl text-teal-ink">{template.name}</h2>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-            <span className="font-mono">{template.triggerKey}</span> · v{template.version} ·{" "}
-            {description}
-          </p>
-        </div>
-        <div className="px-5 py-4">
+      <section className={embedded ? undefined : "rounded-xl bg-card ring-1 ring-teal/15"}>
+        {embedded ? (
+          <p className="pb-3 text-[12.5px] text-muted-foreground">{description}</p>
+        ) : (
+          <div className="border-b border-teal/10 px-5 py-3.5">
+            <h2 className="font-heading text-xl text-teal-ink">{template.name}</h2>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+              <span className="font-mono">{template.triggerKey}</span> · v{template.version} ·{" "}
+              {description}
+            </p>
+          </div>
+        )}
+        <div className={embedded ? undefined : "px-5 py-4"}>
           <form action={saveEmailTemplateAction} className="space-y-4">
             <input type="hidden" name="templateId" value={template.id} />
             <fieldset disabled={!canEdit} className="space-y-4 disabled:opacity-70">
