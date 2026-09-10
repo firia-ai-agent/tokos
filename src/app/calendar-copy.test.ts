@@ -102,6 +102,43 @@ describe("shared slot picker", () => {
   });
 });
 
+describe("the calendar is a calendar (TOK-54)", () => {
+  it("draws a real month grid on both surfaces rather than a list", () => {
+    for (const source of [doulaCalendar, clientCalendar]) {
+      expect(source).toContain("<MonthGrid");
+      expect(source).toContain("monthGrid(");
+      expect(source).toContain("shiftMonthKey(");
+    }
+  });
+
+  it("moves the weekly checkboxes behind Settings and keeps Upcoming as a tab", () => {
+    expect(doulaCalendar).toContain('href={href({ view: "upcoming" })}');
+    expect(doulaCalendar).toContain('href={href({ view: "settings" })}');
+    // The availability editor is no longer the first thing on the page.
+    expect(doulaCalendar.indexOf("action={saveAvailabilityAction}")).toBeGreaterThan(
+      doulaCalendar.indexOf("<MonthGrid"),
+    );
+    expect(doulaCalendar).toContain("Recurring weekly windows");
+  });
+
+  it("gives the booking link somewhere real to go", () => {
+    expect(doulaCalendar).toContain("<CopyLink");
+    expect(doulaCalendar).toContain("/book`");
+  });
+
+  it("blocks days off through the same calendar families book against", () => {
+    expect(doulaCalendar).toContain("saveTimeOffAction");
+    expect(doulaCalendar).toContain("removeTimeOffAction");
+    expect(doulaCalendar).toContain("Block these days");
+  });
+
+  it("keeps a family's history and tells a link apart from a place", () => {
+    expect(clientCalendar).toContain("Previous visits");
+    expect(clientCalendar).toContain("visitPlace(event.locationLabel)");
+    expect(clientCalendar).toContain('place.kind === "link"');
+  });
+});
+
 describe("client-facing calendar copy never falls back to a role", () => {
   it("says the doula's name, not 'your doula' (TOK-38 B11)", () => {
     for (const source of [clientCalendar, publicBook, slotPicker]) {

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
-import { portalMessages, providerProfiles } from "@/db/schema";
+import { calendarEvents, portalMessages, providerProfiles } from "@/db/schema";
 import {
   confirmFit,
   logClientContact,
@@ -12,7 +12,8 @@ import {
   sendIntro,
   startActiveCare,
 } from "@/lib/funnel";
-import { parseAvailabilityWindow } from "@/lib/calendar";
+import { TIME_OFF_TYPE, organizationTimezone, parseAvailabilityWindow } from "@/lib/calendar";
+import { parseTimeOffRange } from "@/lib/calendar-grid";
 import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
 import { requireStaff, requireStaffClient } from "@/lib/tenancy";
@@ -154,6 +155,63 @@ export async function saveAvailabilityAction(formData: FormData) {
     });
   }
   revalidatePath("/doula/calendar");
+  redirect("/doula/calendar?view=settings&saved=windows");
+}
+
+/**
+ * Block days off (TOK-54). A day off is written into the same `calendar_events` table a
+ * visit is, so `listOpenSlots` stops offering those hours the moment this returns —
+ * there is no second calendar to keep in step, and a family booking page cannot serve a
+ * window the practice already closed.
+ */
+export async function saveTimeOffAction(formData: FormData) {
+  const staff = await requireStaff();
+  const timeZone = await organizationTimezone(staff.organizationId);
+  const range = parseTimeOffRange(
+    formData.get("timeOffStart"),
+    formData.get("timeOffEnd"),
+    timeZone,
+  );
+  if (!range) redirect("/doula/calendar?view=settings&error=time-off");
+
+  const label = String(formData.get("timeOffLabel") ?? "").trim();
+  const db = getDb();
+  await db.insert(calendarEvents).values({
+    id: newId(),
+    organizationId: staff.organizationId,
+    clientId: null,
+    assigneeUserId: staff.userId,
+    type: TIME_OFF_TYPE,
+    title: label || "Time off",
+    startsAt: range.startsAt,
+    endsAt: range.endsAt,
+    status: "scheduled",
+    locationLabel: null,
+  });
+  revalidatePath("/doula/calendar");
+  revalidatePath("/portal/calendar");
+  redirect("/doula/calendar?view=settings&saved=time-off");
+}
+
+/** Undo a day off — the days go back to offering their weekly windows. */
+export async function removeTimeOffAction(formData: FormData) {
+  const staff = await requireStaff();
+  const id = String(formData.get("eventId") ?? "");
+  if (!id) redirect("/doula/calendar?view=settings");
+  const db = getDb();
+  await db
+    .delete(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.id, id),
+        eq(calendarEvents.organizationId, staff.organizationId),
+        eq(calendarEvents.assigneeUserId, staff.userId),
+        eq(calendarEvents.type, TIME_OFF_TYPE),
+      ),
+    );
+  revalidatePath("/doula/calendar");
+  revalidatePath("/portal/calendar");
+  redirect("/doula/calendar?view=settings&saved=time-off-removed");
 }
 
 export async function saveProfileAction(formData: FormData) {

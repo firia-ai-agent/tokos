@@ -79,6 +79,17 @@ describe("openSlots", () => {
       "2026-09-07T15:00:00.000Z",
     ]);
   });
+
+  it("offers nothing on a day the practice took off (TOK-54)", () => {
+    const from = new Date("2026-09-07T00:00:00Z");
+    // Mon 2026-09-07, midnight to midnight EDT.
+    const timeOff = [
+      { startsAt: new Date("2026-09-07T04:00:00Z"), endsAt: new Date("2026-09-08T04:00:00Z") },
+    ];
+    expect(openSlots({ rules: mondayMorning, busy: [], timeOff, from, days: 3 })).toEqual([]);
+    // The same rules a week later are untouched by that one day off.
+    expect(openSlots({ rules: mondayMorning, busy: [], timeOff, from, days: 10 })).toHaveLength(2);
+  });
 });
 
 describe("isSlotOpen — the booking gate", () => {
@@ -128,6 +139,17 @@ describe("isSlotOpen — the booking gate", () => {
     expect(isSlotOpen({ rules: mondayMorning, busy, ...open, now, days: 3 })).toEqual({
       ok: false,
       reason: "already_booked",
+    });
+  });
+
+  it("rejects a window a day off closed, and says the window is not open (TOK-54)", () => {
+    // Not "already booked": nobody took the hour, the practice closed the day.
+    const timeOff = [
+      { startsAt: new Date("2026-09-07T04:00:00Z"), endsAt: new Date("2026-09-08T04:00:00Z") },
+    ];
+    expect(isSlotOpen({ rules: mondayMorning, busy: [], timeOff, ...open, now, days: 3 })).toEqual({
+      ok: false,
+      reason: "outside_availability",
     });
   });
 });

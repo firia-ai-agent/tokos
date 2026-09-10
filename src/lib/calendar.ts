@@ -14,6 +14,13 @@ import { availability, calendarEvents, clients, organizations } from "@/db/schem
  */
 
 export const DEFAULT_TIMEZONE = "America/New_York";
+/**
+ * Vacation lives in the calendar the practice already keeps (TOK-54). A day off is a
+ * `calendar_events` row of this type covering the whole day in the practice's zone, so
+ * blocking a week is the same write as booking a visit — no second table, no second
+ * source of truth, and every slot reader subtracts it for free.
+ */
+export const TIME_OFF_TYPE = "time_off";
 export const SLOT_MINUTES = 60;
 export const BOOKING_HORIZON_DAYS = 14;
 
@@ -184,17 +191,32 @@ function overlaps(a: { startsAt: Date; endsAt: Date }, b: { startsAt: Date; ends
   return a.startsAt < b.endsAt && a.endsAt > b.startsAt;
 }
 
+/**
+ * Drop every slot a day off swallows. Kept separate from the `busy` filter because the
+ * two mean different things to a family: a booked hour is *taken*, a vacation day is
+ * *closed*, and only the second one should ever be editable from a Settings panel.
+ */
+export function subtractTimeOff<T extends { startsAt: Date; endsAt: Date }>(
+  slots: readonly T[],
+  timeOff: readonly BusyBlock[],
+): T[] {
+  if (timeOff.length === 0) return [...slots];
+  return slots.filter((slot) => !timeOff.some((block) => overlaps(slot, block)));
+}
+
 export function openSlots(input: {
   rules: AvailabilityRule[];
   busy: BusyBlock[];
+  timeOff?: BusyBlock[];
   from: Date;
   days?: number;
   slotMinutes?: number;
   timeZone?: string;
 }): Slot[] {
-  return expandAvailabilitySlots(input).filter(
+  const free = expandAvailabilitySlots(input).filter(
     (slot) => !input.busy.some((block) => overlaps(slot, block)),
   );
+  return subtractTimeOff(free, input.timeOff ?? []);
 }
 
 /**
@@ -206,6 +228,7 @@ export function openSlots(input: {
 export function isSlotOpen(input: {
   rules: AvailabilityRule[];
   busy: BusyBlock[];
+  timeOff?: BusyBlock[];
   startsAt: Date;
   endsAt: Date;
   now?: Date;
@@ -232,6 +255,13 @@ export function isSlotOpen(input: {
       slot.endsAt.getTime() === input.endsAt.getTime(),
   );
   if (!match) return { ok: false, reason: "outside_availability" };
+
+  // A vacation day reads as "not an open window", not as "already booked": nobody took
+  // the hour, the practice closed it.
+  const closed = (input.timeOff ?? []).some((block) =>
+    overlaps({ startsAt: input.startsAt, endsAt: input.endsAt }, block),
+  );
+  if (closed) return { ok: false, reason: "outside_availability" };
 
   const taken = input.busy.some((block) =>
     overlaps({ startsAt: input.startsAt, endsAt: input.endsAt }, block),
@@ -268,8 +298,12 @@ async function loadCalendar(input: {
 
   // Anything overlapping the horizon counts as busy, including an event that
   // started before `from` and is still running.
-  const busy = await db
-    .select({ startsAt: calendarEvents.startsAt, endsAt: calendarEvents.endsAt })
+  const blocks = await db
+    .select({
+      type: calendarEvents.type,
+      startsAt: calendarEvents.startsAt,
+      endsAt: calendarEvents.endsAt,
+    })
     .from(calendarEvents)
     .where(
       and(
@@ -281,7 +315,12 @@ async function loadCalendar(input: {
       ),
     );
 
-  return { rules, busy, timeZone: org?.timezone || DEFAULT_TIMEZONE };
+  return {
+    rules,
+    busy: blocks.filter((block) => block.type !== TIME_OFF_TYPE),
+    timeOff: blocks.filter((block) => block.type === TIME_OFF_TYPE),
+    timeZone: org?.timezone || DEFAULT_TIMEZONE,
+  };
 }
 
 export async function listOpenSlots(input: {
@@ -292,8 +331,8 @@ export async function listOpenSlots(input: {
 }): Promise<Slot[]> {
   const from = input.from ?? new Date();
   const days = input.days ?? BOOKING_HORIZON_DAYS;
-  const { rules, busy, timeZone } = await loadCalendar({ ...input, from, days });
-  return openSlots({ rules, busy, from, days, timeZone });
+  const { rules, busy, timeOff, timeZone } = await loadCalendar({ ...input, from, days });
+  return openSlots({ rules, busy, timeOff, from, days, timeZone });
 }
 
 /** Server-side re-check of a slot a client asked for. */
@@ -305,7 +344,7 @@ export async function checkSlot(input: {
   now?: Date;
 }): Promise<SlotCheck> {
   const now = input.now ?? new Date();
-  const { rules, busy, timeZone } = await loadCalendar({
+  const { rules, busy, timeOff, timeZone } = await loadCalendar({
     organizationId: input.organizationId,
     userId: input.userId,
     from: now,
@@ -314,6 +353,7 @@ export async function checkSlot(input: {
   return isSlotOpen({
     rules,
     busy,
+    timeOff,
     startsAt: input.startsAt,
     endsAt: input.endsAt,
     now,
@@ -361,7 +401,7 @@ export async function listSchedule(input: {
   organizationId: string;
   userId: string;
   now?: Date;
-}): Promise<{ upcoming: ScheduleEntry[]; past: ScheduleEntry[] }> {
+}): Promise<{ upcoming: ScheduleEntry[]; past: ScheduleEntry[]; timeOff: ScheduleEntry[] }> {
   const db = getDb();
   const now = input.now ?? new Date();
   const rows = await db
@@ -391,14 +431,20 @@ export async function listSchedule(input: {
     clientName: row.preferredName || row.clientName || null,
   }));
 
-  const upcoming = entries
+  // Time off shares the table but is not a visit: it belongs on the grid as a closed
+  // band and in Settings as something to cancel, never in "Upcoming visits".
+  const visits = entries.filter((entry) => entry.type !== TIME_OFF_TYPE);
+  const upcoming = visits
     .filter((entry) => entry.endsAt > now && entry.status === "scheduled")
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-  const past = entries
+  const past = visits
     .filter((entry) => entry.endsAt <= now || entry.status !== "scheduled")
     .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime());
+  const timeOff = entries
+    .filter((entry) => entry.type === TIME_OFF_TYPE && entry.status === "scheduled")
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 
-  return { upcoming, past };
+  return { upcoming, past, timeOff };
 }
 
 /** Client-facing consults, split at now. */
