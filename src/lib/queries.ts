@@ -620,13 +620,19 @@ export async function resourcesHub(organizationId: string, viewerUserId: string)
     viewerUserId,
   );
 
-  const shares = await db
+  // The shared-with list is filtered by the same rule as the library (TOK-70). It names
+  // each handout and puts an Unshare button beside it, so leaving it unscoped showed
+  // Priya the founder's named sheet anyway — and offered to withdraw it from a family.
+  const allShares = await db
     .select({ share: resourceShares, resource: resources, client: clients })
     .from(resourceShares)
     .innerJoin(resources, eq(resources.id, resourceShares.resourceId))
     .innerJoin(clients, eq(clients.id, resourceShares.clientId))
     .where(eq(resourceShares.organizationId, organizationId))
     .orderBy(desc(resourceShares.sharedAt));
+  const shares = allShares.filter(
+    (row) => !row.resource.ownerUserId || row.resource.ownerUserId === viewerUserId,
+  );
 
   return {
     library,

@@ -104,3 +104,23 @@ describe("ownership on the authoring form", () => {
     expect(visibleResources(library, PRIYA)).toHaveLength(1);
   });
 });
+
+describe("the shared-with list is the same library, seen sideways", () => {
+  // The bug that survived the first pass: the library on `/doula/resources` was filtered,
+  // but the "shared with" list underneath it was not — so Priya still read the founder's
+  // named handout there, with an Unshare button next to it.
+  const shares = [
+    { id: "s1", resource: { id: "r1", title: "What Maya does (and does not do)", ownerUserId: MAYA } },
+    { id: "s2", resource: { id: "r3", title: "Comfort measures to practice before labor", ownerUserId: null } },
+  ];
+  const visibleShares = (viewer: string) =>
+    shares.filter((row) => visibleResources([row.resource], viewer).length > 0);
+
+  it("hides another doula's shares from her", () => {
+    expect(visibleShares(PRIYA).map((row) => row.id)).toEqual(["s2"]);
+  });
+
+  it("still shows a doula her own shares and the practice's", () => {
+    expect(visibleShares(MAYA).map((row) => row.id)).toEqual(["s1", "s2"]);
+  });
+});

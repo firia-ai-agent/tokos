@@ -8,7 +8,11 @@ import { resourceShares, resources } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { requireStaff, requireStaffClient } from "@/lib/tenancy";
-import { RESOURCE_OWNER_FIELD, resourceOwnerFromForm } from "@/lib/provider-resources";
+import {
+  RESOURCE_OWNER_FIELD,
+  resourceOwnerFromForm,
+  visibleResources,
+} from "@/lib/provider-resources";
 
 const RESOURCE_KINDS = ["handout", "link", "checklist", "video"];
 
@@ -136,6 +140,15 @@ export async function unshareResourceAction(formData: FormData) {
     .limit(1);
   if (!share) return;
 
+  // Whose handout is being withdrawn from a family matters as much as whose org it is
+  // (TOK-70): another doula's named sheet is not hers to take back.
+  const [resource] = await db
+    .select({ id: resources.id, title: resources.title, ownerUserId: resources.ownerUserId })
+    .from(resources)
+    .where(eq(resources.id, share.resourceId))
+    .limit(1);
+  if (!resource || visibleResources([resource], staff.userId).length === 0) return;
+
   await db.delete(resourceShares).where(eq(resourceShares.id, share.id));
   revalidateResources(share.clientId);
 }
@@ -158,12 +171,17 @@ async function shareResourcesWithClients(input: {
     return { shared: 0, skippedDuplicate: 0, clientIds: [] as string[] };
   }
 
-  const library = await db
-    .select({ id: resources.id })
-    .from(resources)
-    .where(
-      and(eq(resources.organizationId, input.organizationId), inArray(resources.id, resourceIds)),
-    );
+  // Org-scoped, then owner-scoped (TOK-70): the picker already hides another doula's
+  // first-person handout, and a posted id must not get past what the picker refuses.
+  const library = visibleResources(
+    await db
+      .select({ id: resources.id, title: resources.title, ownerUserId: resources.ownerUserId })
+      .from(resources)
+      .where(
+        and(eq(resources.organizationId, input.organizationId), inArray(resources.id, resourceIds)),
+      ),
+    input.actorUserId,
+  );
   if (library.length === 0) return { shared: 0, skippedDuplicate: 0, clientIds: [] as string[] };
 
   const existing = await db
