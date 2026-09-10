@@ -15,8 +15,8 @@ const clientCalendar = read("app", "(client)", "portal", "calendar", "page.tsx")
 const doulaCalendar = read("app", "(doula)", "doula", "calendar", "page.tsx");
 const publicBook = read("app", "(public)", "p", "[slug]", "book", "page.tsx");
 const slotPicker = read("components", "brand", "slot-picker.tsx");
-const visitsAlias = read("app", "(client)", "portal", "visits", "page.tsx");
 const clientLayout = read("app", "(client)", "portal", "layout.tsx");
+const nextConfig = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
 
 describe("client /portal/calendar (TOK-33 C1–C7, C14)", () => {
   it("titles the page with the person the family is seeing (C6)", () => {
@@ -155,7 +155,9 @@ describe("client-facing calendar copy never falls back to a role", () => {
 
 describe("/portal/visits alias (TOK-54)", () => {
   it("sends the URL families type to the calendar, permanently", () => {
-    expect(visitsAlias).toContain('permanentRedirect("/portal/calendar")');
+    expect(nextConfig).toContain(
+      '{ source: "/portal/visits", destination: "/portal/calendar", permanent: true }',
+    );
   });
 
   it("leaves the Visits nav pointing at the calendar itself, not the alias", () => {

@@ -7,6 +7,13 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: "3mb" },
   },
+  // "Visits" is what the nav and a family call the calendar, so /portal/visits is the
+  // URL people type and share — it used to 404. Redirecting here rather than from a
+  // page under the portal segment keeps it a real 308: the portal layout streams, so a
+  // permanentRedirect() inside it degrades to a client-side meta refresh.
+  async redirects() {
+    return [{ source: "/portal/visits", destination: "/portal/calendar", permanent: true }];
+  },
   images: {
     // Provider photos are the only images we optimize, and they are always same-origin.
     localPatterns: [{ pathname: "/api/media/**", search: "" }],
