@@ -7,10 +7,12 @@
  * one that leaked a dilation curve. Everything below is projection: which groups have
  * anything left, and how a stored value reads as a sentence.
  *
- * Labels come from `lib/chart/field-defs`, so the family sees the wording their doula saw
- * on the form. No copy is written here — in particular none for the Birth Log, which Vera
- * holds until the portal form crawl lands. A birth log that a doula opened to
- * `shared_summary` renders with its own non-clinical field labels and no narration.
+ * Labels come from `lib/chart/field-defs`, with a small family-safe remap for chart-group
+ * chrome ("medical choices" / "Newborn procedures") that would otherwise read as hospital
+ * paperwork on Passport. The doula signature block never reaches here — that strip lives in
+ * `clientVisibleFieldKeys`. No Birth Log narration is written here; Vera holds that until
+ * the portal form crawl lands. A birth log opened to `shared_summary` renders its own
+ * non-clinical field labels only.
  */
 
 import {
@@ -88,8 +90,23 @@ export function formatChartAnswer(
 }
 
 /**
+ * Form group / field labels that read as hospital chart chrome on the family Passport.
+ * Preference keys stay (Faith K1); only the wording softens. Staff forms keep field-defs.
+ */
+const FAMILY_SAFE_GROUP_LABELS: Readonly<Record<string, string>> = {
+  early_labor_medical: "Early labor preferences",
+  newborn_procedures: "Newborn care preferences",
+};
+
+const FAMILY_SAFE_FIELD_LABELS: Readonly<Record<string, string>> = {
+  early_labor_medical: "Early labor preferences",
+  newborn_procedures: "Newborn care preferences",
+};
+
+/**
  * The client-visible answers of one document, grouped as the form groups them. Groups with
- * nothing left in them are dropped rather than rendered as empty headings.
+ * nothing left in them are dropped rather than rendered as empty headings. Signature /
+ * attestation never arrives here — `clientVisibleFieldKeys` already strips that block.
  */
 export function passportSections(
   document: ChartDocumentKey,
@@ -98,13 +115,28 @@ export function passportSections(
 ): PassportSection[] {
   const visible = new Set(clientVisibleFieldKeys(document, policy));
   return chartDocument(document).groups.flatMap((group) => {
+    if (group.key === "signature") return [];
     const fields = group.fields.flatMap((field) => {
       if (!visible.has(field.key)) return [];
       const value = formatChartAnswer(field, answers[field.key]);
       if (!value) return [];
-      return [{ key: field.key, label: field.label, value, help: field.help }];
+      return [
+        {
+          key: field.key,
+          label: FAMILY_SAFE_FIELD_LABELS[field.key] ?? field.label,
+          value,
+          help: field.help,
+        },
+      ];
     });
-    return fields.length > 0 ? [{ key: group.key, label: group.label, fields }] : [];
+    if (fields.length === 0) return [];
+    return [
+      {
+        key: group.key,
+        label: FAMILY_SAFE_GROUP_LABELS[group.key] ?? group.label,
+        fields,
+      },
+    ];
   });
 }
 

@@ -37,8 +37,24 @@ describe("chart share policy (TOK-44, Faith K1)", () => {
 
   it("shares a family's own preferences back, and only those", () => {
     const visible = clientVisibleFieldKeys("care_plan", CARE_PLAN_SHAREABLE_POLICY);
-    expect(visible).toEqual(chartFieldKeys("care_plan"));
+    const withoutSignature = chartFieldKeys("care_plan").filter(
+      (key) => !["doula_first_name", "doula_last_name", "doula_signature"].includes(key),
+    );
+    expect(visible).toEqual(withoutSignature);
+    expect(visible).toContain("medication_code_word");
+    expect(visible).not.toContain("doula_signature");
     expect(isClientVisibleField("care_plan", "staff_only", "medication_code_word")).toBe(false);
+  });
+
+  it("never hands the doula signature block to a family, under any policy", () => {
+    for (const document of CHART_DOCUMENT_KEYS) {
+      for (const policy of SHARE_POLICIES) {
+        const visible = clientVisibleFieldKeys(document, policy);
+        for (const key of ["doula_first_name", "doula_last_name", "doula_signature"]) {
+          expect(visible, `${document}/${policy}/${key}`).not.toContain(key);
+        }
+      }
+    }
   });
 
   it("never shares a prenatal note's medical flags", () => {

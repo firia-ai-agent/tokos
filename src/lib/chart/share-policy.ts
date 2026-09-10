@@ -13,7 +13,7 @@
  * under every policy — including the shared one. Faith's K1 answer can widen the summary;
  * it cannot widen the grid without an explicit code change reviewed against this comment.
  */
-import { chartFields, type ChartDocumentKey } from "@/lib/chart/field-defs";
+import { chartDocument, type ChartDocumentKey } from "@/lib/chart/field-defs";
 
 export const SHARE_POLICIES = [
   /** Chart lives inside the practice. No client-facing surface reads it. */
@@ -58,17 +58,21 @@ export function isSharePolicy(value: string): value is SharePolicy {
  * The field keys a client may see for a document under a policy — the rule TOK-45's share
  * APIs must call rather than re-deriving.
  *
- * Two invariants, in this order:
+ * Three invariants, in this order:
  *  1. A clinical field (dilation/effacement/station, interventions, APGAR, tearing) is
  *     never returned, whatever the policy says.
- *  2. `staff_only` returns nothing at all.
+ *  2. The doula signature / attestation block is never returned — that is staff proof the
+ *     row was completed, not a preference the family wrote.
+ *  3. `staff_only` returns nothing at all.
  */
 export function clientVisibleFieldKeys(
   document: ChartDocumentKey,
   policy: SharePolicy,
 ): string[] {
   if (policy === "staff_only") return [];
-  return chartFields(document)
+  return chartDocument(document)
+    .groups.filter((group) => group.key !== "signature")
+    .flatMap((group) => group.fields)
     .filter((field) => !field.clinical)
     .map((field) => field.key);
 }

@@ -17,6 +17,9 @@ const carePlanAnswers = {
   newborn_procedures: ["vitamin_k"],
   know_gender: "surprise",
   circumcising: "no",
+  doula_first_name: "Maya",
+  doula_last_name: "Chen",
+  doula_signature: "Maya Chen",
 };
 
 /** A signed birth log with the whole clinical grid filled in — the worst case. */
@@ -31,6 +34,9 @@ const birthLogAnswers = {
   degree_of_tearing: "second",
   apgar_one_minute: 8,
   apgar_five_minute: 9,
+  doula_first_name: "Maya",
+  doula_last_name: "Chen",
+  doula_signature: "Maya Chen",
 };
 
 describe("passport sections (TOK-45)", () => {
@@ -71,6 +77,39 @@ describe("passport sections (TOK-45)", () => {
   it("shows a family nothing at all while the plan is staff-only", () => {
     expect(passportSections("care_plan", "staff_only", carePlanAnswers)).toEqual([]);
   });
+
+  it("hides the doula signature / attestation group from the family", () => {
+    const sections = passportSections("care_plan", CARE_PLAN_SHAREABLE_POLICY, carePlanAnswers);
+    expect(sections.map((section) => section.key)).not.toContain("signature");
+    const keys = sections.flatMap((section) => section.fields.map((field) => field.key));
+    expect(keys).not.toContain("doula_first_name");
+    expect(keys).not.toContain("doula_last_name");
+    expect(keys).not.toContain("doula_signature");
+    const text = JSON.stringify(sections);
+    expect(text).not.toContain("Digital signature");
+    expect(text).not.toContain("Maya Chen");
+  });
+
+  it("softens clinical chart group headings on the family Passport", () => {
+    const sections = passportSections("care_plan", CARE_PLAN_SHAREABLE_POLICY, carePlanAnswers);
+    const medical = sections.find((section) => section.key === "early_labor_medical");
+    const newborn = sections.find((section) => section.key === "newborn_procedures");
+    expect(medical?.label).toBe("Early labor preferences");
+    expect(newborn?.label).toBe("Newborn care preferences");
+    expect(medical?.fields.find((f) => f.key === "early_labor_medical")?.label).toBe(
+      "Early labor preferences",
+    );
+    expect(newborn?.fields.find((f) => f.key === "newborn_procedures")?.label).toBe(
+      "Newborn care preferences",
+    );
+    const text = JSON.stringify(sections);
+    expect(text).not.toContain("Early labor — medical choices");
+    expect(text).not.toContain("Newborn procedures");
+    // Preference keys themselves remain — intentional family shares.
+    expect(medical?.fields.map((f) => f.key)).toContain("early_labor_medical");
+    expect(medical?.fields.map((f) => f.key)).toContain("medication_code_word");
+    expect(newborn?.fields.map((f) => f.key)).toEqual(["newborn_procedures"]);
+  });
 });
 
 describe("birth log clinical strip (TOK-45 — S0)", () => {
@@ -100,6 +139,8 @@ describe("birth log clinical strip (TOK-45 — S0)", () => {
     expect(keys).toContain("birth_location");
     expect(keys).toContain("baby_name");
     expect(keys).not.toContain("admission_dilation_effacement_station");
+    expect(keys).not.toContain("doula_signature");
+    expect(sections.map((section) => section.key)).not.toContain("signature");
   });
 
   it("draws nothing for a grid even if one were handed to it", () => {
