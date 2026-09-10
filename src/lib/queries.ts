@@ -15,9 +15,11 @@ import {
   formSubmissions,
   formTemplates,
   invites,
+  invoiceLines,
   invoices,
   memberships,
   organizations,
+  paymentStatuses,
   pipelineEvents,
   pipelineStages,
   portalMessages,
@@ -33,6 +35,8 @@ import { homeCaseloadHint, type ShellPersona } from "@/lib/shell-persona";
 import { FAMILY_AUDIENCE, familyTemplates, staffTemplates } from "@/lib/form-audience";
 import { isMissedVisit, MISSED_VISIT_STATUS } from "@/lib/calendar";
 import { attentionInputOf } from "@/lib/lead-board";
+import type { InvoiceRecord, PackageSource } from "@/lib/invoice-dashboard";
+import type { FamilyInvoice, FamilyInvoiceLine } from "@/lib/family-pay";
 import {
   needsAttentionRows,
   type NeedsAttentionInput,
@@ -1068,4 +1072,143 @@ export async function stageHistory(organizationId: string, clientId: string) {
     if (!entered.has(stage)) entered.set(stage, event.at);
   }
   return entered;
+}
+
+/**
+ * Every invoice in the practice, joined to the family that owes it and to the payment row
+ * that touched the money (TOK-55).
+ *
+ * The `payment_statuses` join is the point: `invoices.status` alone cannot say "Paid" out
+ * loud (TOK-48), so the staff dashboard reads the same two columns the family's pay page
+ * does. One query feeds all four tabs, which is what keeps the Families rollup and the
+ * Invoicing table from disagreeing about what is outstanding.
+ */
+export async function invoiceDashboardRows(organizationId: string): Promise<InvoiceRecord[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      invoice: invoices,
+      paymentStatus: paymentStatuses.status,
+      familyName: clients.displayName,
+      familyEmail: clients.email,
+      contractPackage: contracts.packageLabel,
+      engagementPackage: engagements.packageLabel,
+    })
+    .from(invoices)
+    .innerJoin(clients, eq(clients.id, invoices.clientId))
+    .leftJoin(paymentStatuses, eq(paymentStatuses.contractId, invoices.contractId))
+    .leftJoin(contracts, eq(contracts.id, invoices.contractId))
+    .leftJoin(engagements, eq(engagements.id, invoices.engagementId))
+    .where(eq(invoices.organizationId, organizationId));
+
+  return rows.map((row) => ({
+    id: row.invoice.id,
+    number: row.invoice.number,
+    clientId: row.invoice.clientId,
+    familyName: row.familyName,
+    familyEmail: row.familyEmail,
+    contractId: row.invoice.contractId,
+    engagementId: row.invoice.engagementId,
+    packageLabel: row.engagementPackage ?? row.contractPackage ?? null,
+    status: row.invoice.status,
+    paymentStatus: row.paymentStatus ?? null,
+    amountCents: row.invoice.amountCents,
+    currency: row.invoice.currency,
+    issuedAt: row.invoice.createdAt,
+    dueAt: row.invoice.dueAt,
+    paidAt: row.invoice.paidAt,
+  }));
+}
+
+/** The practice's real package catalogue, for the Packages tab. */
+export async function practicePackages(organizationId: string): Promise<PackageSource[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: engagements.id,
+      packageLabel: engagements.packageLabel,
+      amountCents: engagements.amountCents,
+      currency: engagements.currency,
+      status: engagements.status,
+      clientId: engagements.clientId,
+    })
+    .from(engagements)
+    .where(eq(engagements.organizationId, organizationId));
+  return rows;
+}
+
+/** Families an invoice can be raised against, for the New invoice sheet. */
+export async function billableFamilies(organizationId: string) {
+  const db = getDb();
+  return db
+    .select({ id: clients.id, name: clients.displayName, email: clients.email })
+    .from(clients)
+    .where(eq(clients.organizationId, organizationId))
+    .orderBy(asc(clients.displayName));
+}
+
+/**
+ * One family's invoices with their lines, for `/portal/pay`.
+ *
+ * Lines come back in a second read and are stitched in memory rather than joined, so a
+ * three-line invoice stays one invoice instead of arriving as three rows the page then
+ * has to de-duplicate — and an invoice with no lines still comes back.
+ */
+export async function familyInvoices(
+  organizationId: string,
+  clientId: string,
+): Promise<FamilyInvoice[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      invoice: invoices,
+      paymentStatus: paymentStatuses.status,
+      contractPackage: contracts.packageLabel,
+      engagementPackage: engagements.packageLabel,
+    })
+    .from(invoices)
+    .leftJoin(paymentStatuses, eq(paymentStatuses.contractId, invoices.contractId))
+    .leftJoin(contracts, eq(contracts.id, invoices.contractId))
+    .leftJoin(engagements, eq(engagements.id, invoices.engagementId))
+    .where(and(eq(invoices.organizationId, organizationId), eq(invoices.clientId, clientId)));
+
+  if (rows.length === 0) return [];
+
+  const lineRows = await db
+    .select()
+    .from(invoiceLines)
+    .where(
+      and(
+        eq(invoiceLines.organizationId, organizationId),
+        inArray(
+          invoiceLines.invoiceId,
+          rows.map((row) => row.invoice.id),
+        ),
+      ),
+    );
+  const linesByInvoice = new Map<string, FamilyInvoiceLine[]>();
+  for (const line of lineRows) {
+    const list = linesByInvoice.get(line.invoiceId) ?? [];
+    list.push({
+      id: line.id,
+      description: line.description,
+      quantity: line.quantity,
+      unitAmountCents: line.unitAmountCents,
+    });
+    linesByInvoice.set(line.invoiceId, list);
+  }
+
+  return rows.map((row) => ({
+    id: row.invoice.id,
+    number: row.invoice.number,
+    status: row.invoice.status,
+    paymentStatus: row.paymentStatus ?? null,
+    amountCents: row.invoice.amountCents,
+    currency: row.invoice.currency,
+    issuedAt: row.invoice.createdAt,
+    dueAt: row.invoice.dueAt,
+    paidAt: row.invoice.paidAt,
+    packageLabel: row.engagementPackage ?? row.contractPackage ?? null,
+    lines: linesByInvoice.get(row.invoice.id) ?? [],
+  }));
 }

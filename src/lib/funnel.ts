@@ -37,6 +37,7 @@ import {
 } from "@/lib/pipeline";
 import { AI_NOTE_SOURCES, type AiNoteSource } from "@/lib/lead-fields";
 import { isPaymentCleared, paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
+import { dueDateFrom, nextInvoiceNumber } from "@/lib/invoice-dashboard";
 import { assertSlotOpen } from "@/lib/calendar";
 import { appUrl } from "@/lib/env";
 
@@ -330,7 +331,9 @@ export async function sendContract(input: {
 
   const invoiceCount = (await db.select().from(invoices).where(eq(invoices.organizationId, input.organizationId))).length;
   const invoiceId = newId();
-  const number = `NOVA-${1001 + invoiceCount}`;
+  // Numbering and payment terms are the practice's, declared once beside the Templates
+  // tab that shows them (TOK-55) — not two literals that drift apart in two files.
+  const number = nextInvoiceNumber(invoiceCount);
   await db.insert(invoices).values({
     id: invoiceId,
     organizationId: input.organizationId,
@@ -340,7 +343,7 @@ export async function sendContract(input: {
     number,
     status: "open",
     amountCents,
-    dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    dueAt: dueDateFrom(new Date()),
   });
   await db.insert(invoiceLines).values({
     id: newId(),
@@ -468,6 +471,13 @@ export async function markInvoicePaid(input: {
   invoiceId: string;
   externalId?: string;
   actorUserId?: string | null;
+  /**
+   * How the money arrived. `manual` is a payment taken outside Tokos — a cheque, a
+   * transfer, cash at a visit — recorded by staff who received it (TOK-55). It clears the
+   * invoice exactly as a card does, because the money is equally real; what it must not
+   * do is overwrite the Checkout session on an invoice Stripe is still working on.
+   */
+  method?: "stripe" | "manual";
 }) {
   const db = getDb();
   const [invoice] = await db
@@ -477,12 +487,15 @@ export async function markInvoicePaid(input: {
     .limit(1);
   if (!invoice) throw new Error("Invoice not found");
 
+  const method = input.method ?? (input.externalId?.startsWith("stub") ? "manual" : "stripe");
+
   await db
     .update(invoices)
     .set({
       status: "paid",
       paidAt: new Date(),
-      stripeCheckoutSessionId: input.externalId,
+      // A hand-recorded payment has no Checkout session, and its reference is not one.
+      ...(method === "stripe" ? { stripeCheckoutSessionId: input.externalId } : {}),
       updatedAt: new Date(),
     })
     .where(eq(invoices.id, invoice.id));
@@ -492,7 +505,7 @@ export async function markInvoicePaid(input: {
       .update(paymentStatuses)
       .set({
         status: "cleared",
-        method: input.externalId?.startsWith("stub") ? "manual" : "stripe",
+        method,
         externalId: input.externalId,
         clearedAt: new Date(),
         updatedAt: new Date(),
@@ -506,6 +519,7 @@ export async function markInvoicePaid(input: {
     action: "invoice.paid",
     entityType: "invoice",
     entityId: invoice.id,
+    metadata: { method },
   });
 
   return maybeAdvance(input.organizationId, invoice.clientId, input.actorUserId ?? null, "payment_cleared");
