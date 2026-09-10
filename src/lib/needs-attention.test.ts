@@ -3,6 +3,9 @@ import {
   NEEDS_ATTENTION_LABELS,
   NEEDS_ATTENTION_NO_CONTACT_DAYS,
   NEEDS_ATTENTION_REASONS,
+  NEEDS_ATTENTION_URGENT_FLOOR,
+  isUrgentReason,
+  reasonWeight,
   daysSinceContact,
   reasonActionHref,
   reasonActionLabel,
@@ -485,9 +488,9 @@ describe("one row per family holds with the TOK-58 rules", () => {
     expect(queue[0].name).toBe("Maya Chen");
     expect(queue[0].reasons.map((r) => r.key)).toEqual([
       "open_invoice",
+      "unread_message",
       "missed_visit",
       "no_contact",
-      "unread_message",
       "forms_incomplete",
       "unreviewed",
     ]);
@@ -498,8 +501,8 @@ describe("one row per family holds with the TOK-58 rules", () => {
   it("prints the name once and the reasons as one short list", () => {
     const [row] = needsAttentionRows([maya], TODAY);
     expect(reasonSummary(row)).toBe(
-      `Open invoice · Missed visit · No word in ${NEEDS_ATTENTION_NO_CONTACT_DAYS} days · ` +
-        "Unread from Maya Chen · Forms still open · Not reviewed",
+      "Open invoice · Unread from Maya Chen · Missed visit · " +
+        `No word in ${NEEDS_ATTENTION_NO_CONTACT_DAYS} days · Forms still open · Not reviewed`,
     );
     expect(reasonSummary(row).match(/Maya Chen/g)).toHaveLength(1);
     expect(row.href).toBe("/doula/clients/maya");
@@ -511,5 +514,124 @@ describe("one row per family holds with the TOK-58 rules", () => {
       needsAttentionReasons({ ...maya, stage: "outreach_sent", followUpDueOn: null }, TODAY)
         .map((r) => r.key),
     ).not.toContain("intake_nudge");
+  });
+});
+
+/* ---------------------------------------------------------------------- TOK-69 */
+
+/**
+ * A family who wrote and was ignored used to sit under the practice's own paperwork.
+ *
+ * Two separate things put her there: `unread_message` was flagged urgent but weighed 28,
+ * below "consult done, no note logged" at 30; and the queue ordered families by the sum
+ * of their weights, so three pieces of housekeeping added up to more than one real
+ * finding. Both are fixed here, and both are pinned.
+ */
+describe("unread ranks as the worst thing on the row (TOK-69)", () => {
+  it("weighs every urgent reason above every reason that is not", () => {
+    for (const key of NEEDS_ATTENTION_REASONS) {
+      if (isUrgentReason(key)) {
+        expect(reasonWeight(key), key).toBeGreaterThanOrEqual(NEEDS_ATTENTION_URGENT_FLOOR);
+      } else {
+        expect(reasonWeight(key), key).toBeLessThan(NEEDS_ATTENTION_URGENT_FLOOR);
+      }
+    }
+  });
+
+  it("outranks the practice's own paperwork, which it used to sit under", () => {
+    expect(reasonWeight("unread_message")).toBeGreaterThan(reasonWeight("consult_note_missing"));
+    expect(reasonWeight("unread_message")).toBeGreaterThan(reasonWeight("forms_incomplete"));
+    expect(reasonWeight("unread_message")).toBeGreaterThan(reasonWeight("missed_visit"));
+  });
+
+  it("still sits under the money — a bill is not answered by reading a message", () => {
+    expect(reasonWeight("unread_message")).toBeLessThan(reasonWeight("open_invoice"));
+    expect(reasonWeight("unread_message")).toBeLessThan(reasonWeight("agreement_waiting"));
+  });
+
+  it("leads the row when it is a family's worst signal", () => {
+    const [row] = needsAttentionRows(
+      [{ ...clean, reviewed: false, hasPrimaryDoula: false, unreadInboundCount: 1 }],
+      TODAY,
+    );
+    expect(row.reasons[0].key).toBe("unread_message");
+    expect(row.topWeight).toBe(reasonWeight("unread_message"));
+  });
+
+  it("ranks an ignored family above one carrying only housekeeping", () => {
+    const ignored: NeedsAttentionInput = {
+      ...clean,
+      clientId: "ignored",
+      name: "Zoe Ignored",
+      unreadInboundCount: 1,
+    };
+    // Three chores. Their weights add up to more than one unread message, which is exactly
+    // how the old sum-ordered queue buried her.
+    const chores: NeedsAttentionInput = {
+      ...clean,
+      clientId: "chores",
+      name: "Abby Chores",
+      reviewed: false,
+      hasPrimaryDoula: false,
+      incompleteFormCount: 2,
+    };
+    expect(
+      chores.incompleteFormCount &&
+        reasonWeight("forms_incomplete") + reasonWeight("unmatched") + reasonWeight("unreviewed"),
+    ).toBeGreaterThan(reasonWeight("unread_message"));
+
+    const queue = needsAttentionRows([chores, ignored], TODAY);
+    expect(queue.map((row) => row.clientId)).toEqual(["ignored", "chores"]);
+    expect(queue[0].score).toBeLessThan(queue[1].score);
+  });
+
+  it("breaks a tie on the worst reason with the total, then the name", () => {
+    const lighter: NeedsAttentionInput = {
+      ...clean,
+      clientId: "lighter",
+      name: "Aaron Lighter",
+      unreadInboundCount: 1,
+    };
+    const heavier: NeedsAttentionInput = {
+      ...clean,
+      clientId: "heavier",
+      name: "Zara Heavier",
+      unreadInboundCount: 2,
+      reviewed: false,
+    };
+    const queue = needsAttentionRows([lighter, heavier], TODAY);
+    expect(queue.map((row) => row.clientId)).toEqual(["heavier", "lighter"]);
+    expect(queue[0].topWeight).toBe(queue[1].topWeight);
+  });
+
+  it("keeps money at the top of the queue — unread does not outrank a signature", () => {
+    const owing: NeedsAttentionInput = {
+      ...clean,
+      clientId: "owing",
+      name: "Owed Family",
+      hasUnsignedAgreement: true,
+    };
+    const ignored: NeedsAttentionInput = {
+      ...clean,
+      clientId: "ignored",
+      name: "Ignored Family",
+      unreadInboundCount: 4,
+      reviewed: false,
+      hasPrimaryDoula: false,
+      incompleteFormCount: 3,
+    };
+    expect(needsAttentionRows([ignored, owing], TODAY).map((row) => row.clientId)).toEqual([
+      "owing",
+      "ignored",
+    ]);
+  });
+
+  it("keeps Vera's copy on the label", () => {
+    const [reason] = needsAttentionReasons({ ...clean, unreadInboundCount: 1 }, TODAY);
+    expect(reason.label).toBe(`Unread from ${clean.name}`);
+  });
+
+  it("reports a top weight of zero for nobody, and never emits a row for her", () => {
+    expect(needsAttentionRows([clean], TODAY)).toEqual([]);
   });
 });

@@ -172,20 +172,39 @@ export function reasonActionHref(clientId: string, key: NeedsAttentionReasonKey)
  *
  * An unsigned agreement and an unpaid invoice are the two findings with a number attached
  * to them, so they sort above the office chores and lead the summary under the name.
+ *
+ * One rule holds the table together (TOK-69): every reason marked `urgent` weighs more
+ * than every reason that is not. An unread message from the family was the exception —
+ * flagged urgent at 28, below "consult done, no note logged" at 30 — so a family who had
+ * written and been ignored was listed under a piece of the practice's own paperwork.
+ * Somebody waiting on a reply is not a chore. `URGENT_FLOOR` is asserted, not decorative.
  */
 const WEIGHTS: Record<NeedsAttentionReasonKey, number> = {
   agreement_waiting: 60,
   open_invoice: 50,
+  // Below the money and above everything else: an unanswered family is the fastest thing
+  // in this list to lose, and the only one where the person is already waiting on us.
+  unread_message: 48,
   missed_visit: 45,
   follow_up_overdue: 40,
   no_contact: 35,
   consult_note_missing: 30,
-  unread_message: 28,
   forms_incomplete: 25,
   unmatched: 20,
   unreviewed: 10,
   intake_nudge: 5,
 };
+
+/** The lightest urgent reason. Nothing that is not urgent may weigh this much. */
+export const NEEDS_ATTENTION_URGENT_FLOOR = 35;
+
+export function reasonWeight(key: NeedsAttentionReasonKey): number {
+  return WEIGHTS[key];
+}
+
+export function isUrgentReason(key: NeedsAttentionReasonKey): boolean {
+  return URGENT[key];
+}
 
 export type NeedsAttentionInput = {
   clientId: string;
@@ -226,8 +245,10 @@ export type NeedsAttentionRow = {
   stage: PipelineStageName;
   stageLabel: string;
   reasons: NeedsAttentionReason[];
-  /** Sum of reason weights — how far up the queue this family sits. */
+  /** Sum of reason weights — how much is outstanding on this family in total. */
   score: number;
+  /** The weight of her worst single reason. What actually orders the queue (TOK-69). */
+  topWeight: number;
   href: string;
 };
 
@@ -371,7 +392,16 @@ export function needsAttention(input: NeedsAttentionInput, today: Date = new Dat
   return needsAttentionReasons(input, today).length > 0;
 }
 
-/** One row per family, worst first, name once. */
+/**
+ * One row per family, worst first, name once.
+ *
+ * Worst means her worst single reason, not her longest list (TOK-69). Adding up weights
+ * let three pieces of housekeeping out-shout one real finding: a family nobody had
+ * matched, reviewed, or chased for a form scored higher than a family who had written and
+ * been ignored, so the queue put the chores on top. The total still breaks ties, because
+ * between two families whose worst thing is the same thing, the one with more outstanding
+ * is the one to open.
+ */
 export function needsAttentionRows(
   inputs: readonly NeedsAttentionInput[],
   today: Date = new Date(),
@@ -386,11 +416,16 @@ export function needsAttentionRows(
         stageLabel: stageLabel(input.stage),
         reasons,
         score: reasons.reduce((sum, item) => sum + item.weight, 0),
+        // `needsAttentionReasons` already sorts heaviest first.
+        topWeight: reasons[0]?.weight ?? 0,
         href: `/doula/clients/${input.clientId}`,
       };
     })
     .filter((row) => row.reasons.length > 0)
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        b.topWeight - a.topWeight || b.score - a.score || a.name.localeCompare(b.name),
+    );
 }
 
 /** "Follow-up overdue · Not reviewed" — the short list under the name. */
