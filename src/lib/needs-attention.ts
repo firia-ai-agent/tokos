@@ -23,6 +23,7 @@ import {
   type PipelineStageName,
 } from "@/lib/pipeline";
 import { followUpState, leadDate } from "@/lib/lead-fields";
+import { messagesHref } from "@/lib/message-inbox";
 import { formatCents } from "@/lib/money";
 
 export const NEEDS_ATTENTION_REASONS = [
@@ -128,29 +129,42 @@ const URGENT: Record<NeedsAttentionReasonKey, boolean> = {
  * inventing links of its own — a queue that opens the wrong tab is the polite version of
  * a queue that opens nothing.
  */
-const ACTIONS: Record<NeedsAttentionReasonKey, { action: string; anchor: string }> = {
-  agreement_waiting: { action: "Chase the signature", anchor: "#money" },
-  open_invoice: { action: "Chase the payment", anchor: "#money" },
+/** Most reasons are cleared inside the family's record, at one of its sections. */
+const section = (anchor: string) => (clientId: string) => `/doula/clients/${clientId}${anchor}`;
+
+const ACTIONS: Record<
+  NeedsAttentionReasonKey,
+  { action: string; href: (clientId: string) => string }
+> = {
+  agreement_waiting: { action: "Chase the signature", href: section("#money") },
+  open_invoice: { action: "Chase the payment", href: section("#money") },
   // The record's own header is where a visit is picked back up: it carries the stage, the
   // consult date and "Log contact", which is what following up on a missed visit means.
-  missed_visit: { action: "Follow up on the visit", anchor: "#lead-details" },
-  follow_up_overdue: { action: "Set the next follow-up", anchor: "#lead-details" },
-  no_contact: { action: "Log a contact", anchor: "#lead-details" },
-  consult_note_missing: { action: "Write the consult note", anchor: "#notes" },
-  unread_message: { action: "Read the message", anchor: "#portal-messages" },
-  forms_incomplete: { action: "Chase the form", anchor: "#forms" },
-  unmatched: { action: "Name a primary doula", anchor: "#care-team" },
-  unreviewed: { action: "Review the record", anchor: "#lead-details" },
-  intake_nudge: { action: "Move intake along", anchor: "#lead-details" },
+  missed_visit: { action: "Follow up on the visit", href: section("#lead-details") },
+  follow_up_overdue: { action: "Set the next follow-up", href: section("#lead-details") },
+  no_contact: { action: "Log a contact", href: section("#lead-details") },
+  consult_note_missing: { action: "Write the consult note", href: section("#notes") },
+  // The one reason whose fix is not a section of a record (TOK-64): reading a family's
+  // message means opening *her* thread, so the row lands in the inbox with the
+  // conversation already open — which is also what marks it read. Sending a founder to
+  // a card three-quarters down a CRM page was the long way round to the same message.
+  unread_message: {
+    action: "Read the message",
+    href: (clientId) => messagesHref({ clientId }),
+  },
+  forms_incomplete: { action: "Chase the form", href: section("#forms") },
+  unmatched: { action: "Name a primary doula", href: section("#care-team") },
+  unreviewed: { action: "Review the record", href: section("#lead-details") },
+  intake_nudge: { action: "Move intake along", href: section("#lead-details") },
 };
 
 export function reasonActionLabel(key: NeedsAttentionReasonKey): string {
   return ACTIONS[key].action;
 }
 
-/** The exact surface that clears this reason — a section of the family's record. */
+/** The exact surface that clears this reason — a section of the record, or her thread. */
 export function reasonActionHref(clientId: string, key: NeedsAttentionReasonKey): string {
-  return `/doula/clients/${clientId}${ACTIONS[key].anchor}`;
+  return ACTIONS[key].href(clientId);
 }
 
 /**

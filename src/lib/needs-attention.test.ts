@@ -317,9 +317,27 @@ describe("daysSinceContact", () => {
 
 /** TOK-52: a rule that cannot be acted on is a rule that gets ignored. */
 describe("every reason knows how it is fixed", () => {
-  it("has an action and a section of the record for each key", () => {
+  it("has an action and a real staff surface for each key", () => {
     for (const key of NEEDS_ATTENTION_REASONS) {
       expect(reasonActionLabel(key).trim()).toBeTruthy();
+      expect(reasonActionHref("c1", key)).toMatch(
+        /^\/doula\/(clients\/c1#[a-z-]+|messages\?client=c1)$/,
+      );
+    }
+  });
+
+  /**
+   * TOK-64: an unread family is the one reason whose fix is a conversation, not a section
+   * of a CRM record. The bell and the review board both take this href, so it is the
+   * single place that decides "Read the message" opens *her* thread.
+   */
+  it("opens that family's own thread for an unread message", () => {
+    expect(reasonActionHref("jordan", "unread_message")).toBe("/doula/messages?client=jordan");
+  });
+
+  it("still sends every other reason to a section of her record", () => {
+    for (const key of NEEDS_ATTENTION_REASONS) {
+      if (key === "unread_message") continue;
       expect(reasonActionHref("c1", key)).toMatch(/^\/doula\/clients\/c1#[a-z-]+$/);
     }
   });

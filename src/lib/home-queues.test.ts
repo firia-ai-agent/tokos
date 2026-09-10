@@ -288,3 +288,52 @@ describe("the bell", () => {
     expect(shellNotifyItems(needsAttentionRows(many, TODAY), 3)).toHaveLength(3);
   });
 });
+
+/* -------------------------------------------------------------------- TOK-64 */
+
+/**
+ * Nothing in this product is allowed to say "1 new message".
+ *
+ * A notification that does not name the family is a notification a founder has to open to
+ * understand, which is the whole cost the bell exists to remove. The rules already word it
+ * — this pins the two surfaces that render those words, so a later refactor cannot quietly
+ * drop back to the anonymous form or send the click to the wrong place.
+ */
+describe("unread notifications name the family (TOK-64)", () => {
+  const waiting: NeedsAttentionInput = {
+    clientId: "jordan",
+    name: "Jordan Rivera",
+    stage: "active_care",
+    followUpDueOn: null,
+    reviewed: true,
+    hasPrimaryDoula: true,
+    lastContactAt: new Date("2026-09-09T12:00:00Z"),
+    unreadInboundCount: 2,
+  };
+
+  const [bell] = shellNotifyItems(needsAttentionRows([waiting], TODAY));
+  const [board] = reviewBoard(needsAttentionRows([waiting], TODAY));
+
+  it("says who it is from in the bell, never a bare count", () => {
+    const unread = bell.issues.find((issue) => issue.key === "unread_message");
+    expect(unread?.label).toBe("Unread from Jordan Rivera");
+    expect(unread?.detail).toBe("2 messages");
+    expect(bell.detail).not.toMatch(/new message/i);
+  });
+
+  it("says the same thing on the review board", () => {
+    const task = board.tasks.find((item) => item.key === "unread_message");
+    expect(task?.label).toBe("Unread from Jordan Rivera");
+  });
+
+  it("opens Jordan's own thread from either surface", () => {
+    expect(bell.href).toBe("/doula/messages?client=jordan");
+    expect(board.tasks.find((item) => item.key === "unread_message")?.href).toBe(
+      "/doula/messages?client=jordan",
+    );
+  });
+
+  it("reads terracotta — a family waiting on a reply is not housekeeping", () => {
+    expect(bell.urgent).toBe(true);
+  });
+});
