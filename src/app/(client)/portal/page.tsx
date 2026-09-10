@@ -83,7 +83,7 @@ export default async function PortalHomePage({
   const onCallHref = phoneHref(org?.onCallPhone);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* The copy is `client-copy.ts`, not this page (TOK-39 E6) — the old signed banner
           recited the Complete rule out loud because it was written where it was shown. */}
       {banners.map((banner) => (
@@ -107,10 +107,10 @@ export default async function PortalHomePage({
       />
 
       {matched || facts.length > 0 ? (
-        <section className="rounded-xl bg-card p-5 ring-1 ring-teal/15">
-          <div className="flex items-center gap-4">
+        <section className="rounded-xl bg-card px-5 py-4 ring-1 ring-teal/15">
+          <div className="flex items-center gap-3.5">
             {matched ? (
-              <ProviderAvatar name={doula.name} photoFileId={care.photoFileId} size={56} />
+              <ProviderAvatar name={doula.name} photoFileId={care.photoFileId} size={52} />
             ) : null}
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal">
@@ -137,7 +137,7 @@ export default async function PortalHomePage({
             </div>
           </div>
           {facts.length > 0 ? (
-            <dl className="mt-4 grid gap-x-8 gap-y-3 border-t border-teal/10 pt-4 sm:grid-cols-3">
+            <dl className="mt-3 grid gap-x-8 gap-y-2 border-t border-teal/10 pt-3 sm:grid-cols-3">
               {facts.map((fact) => (
                 <div key={fact.label}>
                   <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
@@ -156,13 +156,13 @@ export default async function PortalHomePage({
         </section>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <Link
             key={card.href}
             href={card.href}
             className={cn(
-              "group rounded-xl bg-card p-4 ring-1 transition",
+              "group rounded-xl bg-card px-4 py-3.5 ring-1 transition",
               card.actionable
                 ? "ring-coral/30 hover:ring-coral/55"
                 : "ring-teal/15 hover:ring-teal/35",
@@ -181,14 +181,16 @@ export default async function PortalHomePage({
                     </span>
                   ) : null}
                 </p>
-                <p className="mt-2 text-[13px] text-muted-foreground">{card.detail}</p>
+                <p className="mt-1.5 text-[13px] leading-snug text-muted-foreground">
+                  {card.detail}
+                </p>
               </div>
               {/* A locked card shows no number — see `checklistCards` (E2). */}
               {card.locked ? null : (
                 <p
                   className={cn(
-                    "font-heading text-[28px] font-semibold leading-none tabular-nums",
-                    card.tone === "coral" ? "text-coral" : "text-teal-ink",
+                    "font-heading text-[34px] font-semibold leading-none tabular-nums",
+                    card.tone === "coral" ? "text-coral" : "text-teal-ink/80",
                   )}
                 >
                   {card.count}
@@ -198,11 +200,11 @@ export default async function PortalHomePage({
             {/* Every card carried an "Open →" (TOK-39 E5). Six of them, all saying the
                 same thing about a card that is already a link — the arrow was chrome,
                 and it crowded out the one line that carries meaning. */}
-            <div className="mt-4">
+            <div className="mt-2.5">
               {/* The count is never a naked number — it always says what it counts. */}
               <p
                 className={cn(
-                  "text-[12px] font-semibold",
+                  "text-[12.5px] font-semibold",
                   card.tone === "coral" ? "text-coral" : "text-teal-ink/70",
                 )}
               >

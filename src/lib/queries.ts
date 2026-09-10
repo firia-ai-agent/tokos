@@ -40,6 +40,7 @@ import { familyTemplates, staffTemplates } from "@/lib/form-audience";
 import {
   needsAttentionRows,
   type NeedsAttentionInput,
+  type NeedsAttentionRow,
 } from "@/lib/needs-attention";
 
 export type HomeKpi = {
@@ -65,6 +66,31 @@ export type HomeTimelineItem = {
   weeksLabel: string;
   stage: string;
   href: string;
+  /** Raw `clients.service_type`; the card words it through `serviceTypeLabel`. */
+  serviceType: string | null;
+};
+
+/**
+ * One line of money that is actually moving: an invoice nobody has paid, an agreement
+ * nobody has signed. Home's right column used to hold six $0 bars; this is what belongs
+ * in that space while the ledger is young (TOK-52 density).
+ */
+export type HomeMoneyRow = {
+  id: string;
+  name: string;
+  /** "Invoice open" / "Agreement unsigned". */
+  kind: string;
+  /** "$900" — cents formatted, trailing ".00" dropped. */
+  amount: string;
+  detail: string;
+  href: string;
+};
+
+/** What one family owes, has waiting for signature, and has already paid. */
+export type ClientLedger = {
+  outstandingCents: number;
+  unsignedCents: number;
+  clearedCents: number;
 };
 
 export type HomeMonthBar = {
@@ -80,6 +106,36 @@ function canonicalStage(row: {
   fitConfirmedAt?: Date | null;
 }): PipelineStageName {
   return migrateStage(row.stage, { fitConfirmed: Boolean(row.fitConfirmedAt) });
+}
+
+/**
+ * Per-family money, from invoice and contract rows already in memory.
+ *
+ * Open invoices, sent-and-unsigned agreements, cleared payments — the three numbers a
+ * dense card may show. Voided agreements are not money waiting on anyone.
+ */
+export function clientLedgers(
+  invoiceRows: readonly (typeof invoices.$inferSelect)[],
+  contractRows: readonly (typeof contracts.$inferSelect)[],
+): Record<string, ClientLedger> {
+  const ledgers: Record<string, ClientLedger> = {};
+  const bump = (clientId: string, key: keyof ClientLedger, cents: number) => {
+    const row = (ledgers[clientId] ??= {
+      outstandingCents: 0,
+      unsignedCents: 0,
+      clearedCents: 0,
+    });
+    row[key] += cents;
+  };
+  for (const invoice of invoiceRows) {
+    if (invoice.status === "open") bump(invoice.clientId, "outstandingCents", invoice.amountCents);
+    if (invoice.status === "paid") bump(invoice.clientId, "clearedCents", invoice.amountCents);
+  }
+  for (const contract of contractRows) {
+    if (contract.status === "voided" || contract.signedAt) continue;
+    bump(contract.clientId, "unsignedCents", contract.amountCents);
+  }
+  return ledgers;
 }
 
 /**
@@ -261,6 +317,7 @@ export async function revenueHome(
         weeksLabel,
         stage: canonicalStage(row),
         href: `/doula/clients/${row.client.id}`,
+        serviceType: row.client.serviceType,
       };
     })
     .sort((a, b) => a.edd.localeCompare(b.edd));
@@ -315,12 +372,40 @@ export async function revenueHome(
     },
   ];
 
+  // Money per family, so a Home card can say "$900 open" without every page re-deriving
+  // it from the invoice list (TOK-52 density). Built from the rows already in memory, and
+  // org-wide on purpose: what a family owes is a fact about her, not about who is looking,
+  // and Needs attention reaches families this staff member is not assigned to.
+  const ledgerByClient = clientLedgers(allInvoices, allContracts);
+
+  const money = (cents: number) => formatCents(cents).replace(/\.00$/, "");
+  const moneyInMotion: HomeMoneyRow[] = [
+    ...outstandingInvoices.map((invoice) => ({
+      id: `invoice-${invoice.id}`,
+      name: clientName(invoice.clientId),
+      kind: "Invoice open",
+      amount: money(invoice.amountCents),
+      detail: invoice.number ?? "Unnumbered",
+      href: "/doula/invoices",
+    })),
+    ...unsignedContracts.map((contract) => ({
+      id: `contract-${contract.id}`,
+      name: clientName(contract.clientId),
+      kind: "Agreement unsigned",
+      amount: money(contract.amountCents),
+      detail: contract.packageLabel,
+      href: `/doula/clients/${contract.clientId}#money`,
+    })),
+  ];
+
   return {
     clients: myClients,
     kpis,
     monthBars,
     attention: uniqueAttention,
     timeline,
+    ledgerByClient,
+    moneyInMotion,
     reviewCount: uniqueAttention.length,
     clearedTotal: cleared,
     outstandingTotal: outstanding,
@@ -925,6 +1010,32 @@ export async function needsAttentionQueue(
 ) {
   const rows = await leadBoard(organizationId, opts);
   return needsAttentionRows(rows.map(attentionInput), today);
+}
+
+/**
+ * The same queue, with the record behind each row (TOK-52 density).
+ *
+ * Home's Needs attention card used to print a name, a stage chip and a list of reasons —
+ * true, and thinner than the same family on the pipeline board. The rules still decide
+ * who is in the queue; this only carries the client row along so the card can say what
+ * service she booked, how far along she is, and where she came from.
+ */
+export type NeedsAttentionCard = {
+  row: NeedsAttentionRow;
+  client: typeof clients.$inferSelect;
+};
+
+export async function needsAttentionCards(
+  organizationId: string,
+  opts: { doulaUserId?: string } = {},
+  today: Date = new Date(),
+): Promise<NeedsAttentionCard[]> {
+  const rows = await leadBoard(organizationId, opts);
+  const byId = new Map(rows.map((row) => [row.client.id, row.client]));
+  return needsAttentionRows(rows.map(attentionInput), today).flatMap((row) => {
+    const client = byId.get(row.clientId);
+    return client ? [{ row, client }] : [];
+  });
 }
 
 /**

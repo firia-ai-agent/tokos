@@ -4,7 +4,9 @@ import { needsAttentionQueue } from "@/lib/queries";
 import { staffStageLabel } from "@/lib/pipeline";
 import { homeCtaLabel, shellPersona } from "@/lib/shell-persona";
 import { reviewBoard, reviewQueueSummary, reviewTaskCount } from "@/lib/home-queues";
+import { NEEDS_ACTION_EDGE } from "@/lib/home-density";
 import { EmptyState } from "@/components/brand/states";
+import { cn } from "@/lib/utils";
 
 /**
  * The review board (TOK-52) — where "N items need your review" lands.
@@ -68,7 +70,14 @@ export default async function DoulaReviewPage() {
         <ol className="grid gap-3">
           {rows.map((row) => (
             <li key={row.clientId}>
-              <article className="rounded-xl bg-card ring-1 ring-teal/15">
+              <article
+                className={cn(
+                  "rounded-xl bg-card ring-1 ring-teal/15",
+                  // Same terracotta edge Home draws (TOK-52 density): every row on this
+                  // board is, by definition, a family that needs action today.
+                  NEEDS_ACTION_EDGE,
+                )}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-teal/10 px-5 py-3.5">
                   <Link
                     href={row.href}

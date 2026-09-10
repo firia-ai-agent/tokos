@@ -128,6 +128,10 @@ export type WaitingItem = {
   ask: string;
   /** The card's own second line, so the two surfaces agree. */
   detail: string;
+  /** How many are open. Zero on a cleared chore — the row still says so. */
+  count: number;
+  /** "Forms · 4 open" — the chip the board's header carries (TOK-52 density). */
+  chip: string;
   href: string;
   /** "Open forms" — the button on the row. */
   action: string;
@@ -202,6 +206,8 @@ function waitingItem(card: ChecklistCard, doulaName: string): WaitingItem {
         ? copy.open(card.count, doulaName)
         : copy.clear(doulaName),
     detail: card.detail,
+    count: card.count,
+    chip: `${card.label} · ${card.countLabel}`,
     href: card.href,
     action: copy.action,
     tone: card.tone,
@@ -236,6 +242,17 @@ export function waitingBoard(
   }
 
   return { summary: checklistSummary(counts), open, alsoHere, done };
+}
+
+/**
+ * The open chores as chips — "Forms · 4 open", "Pay · 1 open" — for the top of the board.
+ *
+ * The count in the greeting says how much; this says what, before a single row is read,
+ * and each chip is the same link its row carries. Open work only: a chip for a chore that
+ * is already done is decoration.
+ */
+export function waitingChips(board: WaitingBoard): Array<QueueLink & { key: string }> {
+  return board.open.map((item) => ({ key: item.key, href: item.href, label: item.chip }));
 }
 
 export function waitingQueueLink(counts: ChecklistCounts): QueueLink {
