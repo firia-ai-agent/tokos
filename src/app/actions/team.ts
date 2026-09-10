@@ -25,10 +25,9 @@ import {
   inviteExpiry,
   inviteStatus,
   inviteUrl,
-  normalizeInviteEmail,
-  normalizeInviteRole,
   roleLabel,
 } from "@/lib/team";
+import { parseAddTeamMember } from "@/lib/team-accounts";
 
 /** Defaults an agency match inherits when a family has no engagement row yet. */
 const DEFAULT_PACKAGE_LABEL = "Birth support package";
@@ -48,8 +47,16 @@ function revalidateTeam(clientId?: string) {
  */
 export async function inviteStaffAction(formData: FormData) {
   const staff = await requireStaffManager();
-  const email = normalizeInviteEmail(String(formData.get("email") ?? ""));
-  const role = normalizeInviteRole(String(formData.get("role") ?? ""));
+  // The Add-team-member popup asks for a name as well as an address (TOK-57), so the
+  // pending card on the grid says "Alex Rivera" rather than a bare mailbox. The parse
+  // refuses a blank name here rather than letting one through to become a nameless row.
+  const parsed = parseAddTeamMember({
+    name: String(formData.get("name") ?? ""),
+    email: String(formData.get("email") ?? ""),
+    role: String(formData.get("role") ?? ""),
+  });
+  if (!parsed.ok) redirect(`/doula/team?error=${parsed.reason}`);
+  const { name, email, role } = parsed.value;
   const db = getDb();
 
   const existingMembers = await db
@@ -84,6 +91,7 @@ export async function inviteStaffAction(formData: FormData) {
     id,
     organizationId: staff.organizationId,
     email,
+    name,
     role,
     token,
     kind: "staff",
@@ -101,6 +109,7 @@ export async function inviteStaffAction(formData: FormData) {
       org_name: org?.name ?? "Tokos",
       invite_url: inviteUrl(appUrl(), token),
       invite_role: roleLabel(role),
+      invitee_name: name,
       token,
       portal_url: `${appUrl()}/login`,
     },

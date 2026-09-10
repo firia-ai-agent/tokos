@@ -4,25 +4,29 @@ import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/tenancy";
 import { orgMatches, orgStaffInvites, teamRoster } from "@/lib/queries";
 import { stageLabel } from "@/lib/pipeline";
+import { serviceTypeLabel } from "@/lib/lead-fields";
 import {
-  INVITABLE_ROLES,
   INVITE_TTL_DAYS,
   canManageTeam,
-  inviteStatus,
   inviteUrl,
   roleLabel,
 } from "@/lib/team";
-import { appUrl } from "@/lib/env";
 import {
-  assignPrimaryDoulaAction,
-  inviteStaffAction,
-  revokeInviteAction,
-} from "@/app/actions/team";
+  ACCOUNT_STATUS_LABELS,
+  ACCOUNT_STATUS_TONES,
+  familyAccounts,
+  groupTeamAccounts,
+  teamAccounts,
+  type AccountStatus,
+  type TeamAccount,
+} from "@/lib/team-accounts";
+import { appUrl } from "@/lib/env";
+import { assignPrimaryDoulaAction, revokeInviteAction } from "@/app/actions/team";
+import { AddTeamMemberDialog } from "@/components/brand/add-team-member-dialog";
+import { ProviderAvatar } from "@/components/brand/avatar";
 import { SettingsTabs } from "@/components/brand/settings-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +36,7 @@ const NOTICES: Record<string, { tone: "teal" | "coral"; text: string }> = {
   revoked: { tone: "teal", text: "Invite withdrawn. That link no longer works." },
   match: { tone: "teal", text: "Primary doula updated for that family." },
   role: { tone: "coral", text: "Only a founder or admin can change the roster." },
+  name: { tone: "coral", text: "Add their name so the invite card is not a bare address." },
   email: { tone: "coral", text: "That does not look like an email address." },
   member: { tone: "coral", text: "That person is already in this workspace." },
   duplicate: { tone: "coral", text: "There is already a live invite for that address." },
@@ -41,6 +46,89 @@ const NOTICES: Record<string, { tone: "teal" | "coral"; text: string }> = {
 
 const SELECT_CLASS =
   "h-9 w-full rounded-md border border-teal/20 bg-card px-2.5 text-[13px] text-teal-ink focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/25";
+
+const STATUS_CLASS: Record<"teal" | "coral" | "muted", string> = {
+  teal: "bg-teal/12 text-teal-ink",
+  coral: "bg-coral/12 text-coral",
+  muted: "bg-muted text-muted-foreground",
+};
+
+function StatusChip({ status }: { status: AccountStatus }) {
+  return (
+    <Badge variant="secondary" className={STATUS_CLASS[ACCOUNT_STATUS_TONES[status]]}>
+      {ACCOUNT_STATUS_LABELS[status]}
+    </Badge>
+  );
+}
+
+/**
+ * One person on the team, joined or still deciding. The same card either way — that is
+ * the whole point of the grid (TOK-57): a pending doula is a colleague you are waiting
+ * on, not a row in a separate table of paperwork.
+ */
+function TeamAccountCard({
+  account,
+  manages,
+  base,
+}: {
+  account: TeamAccount;
+  manages: boolean;
+  base: string;
+}) {
+  const waiting = account.source === "invite";
+  return (
+    <article
+      className={cn(
+        "rounded-xl bg-card p-4 ring-1",
+        waiting ? "ring-coral/20" : "ring-teal/15",
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <ProviderAvatar
+          name={account.name}
+          photoFileId={account.photoFileId}
+          size={44}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="truncate text-[14.5px] font-semibold text-teal-ink">
+              {account.name}
+              {account.credentialsLabel ? (
+                <span className="ml-1.5 text-[12px] font-medium text-muted-foreground">
+                  {account.credentialsLabel}
+                </span>
+              ) : null}
+            </p>
+            <StatusChip status={account.status} />
+          </div>
+          <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">{account.email}</p>
+          <p className="mt-1.5 text-[12.5px] text-muted-foreground">
+            {account.roleLabel}
+            {account.joinedAt ? ` · joined ${format(account.joinedAt, "MMM yyyy")}` : null}
+            {account.expiresAt ? ` · link good through ${format(account.expiresAt, "MMM d")}` : null}
+            {account.source === "member" ? ` · ${account.primaryClients} primary` : null}
+          </p>
+        </div>
+      </div>
+
+      {waiting && account.inviteToken ? (
+        <div className="mt-3 space-y-2 border-t border-teal/10 pt-3">
+          <p className="break-all font-mono text-[11px] leading-snug text-muted-foreground">
+            {inviteUrl(base, account.inviteToken)}
+          </p>
+          {manages && account.inviteId ? (
+            <form action={revokeInviteAction}>
+              <input type="hidden" name="inviteId" value={account.inviteId} />
+              <Button type="submit" size="sm" variant="outline">
+                Withdraw invite
+              </Button>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}
 
 export default async function DoulaTeamPage({
   searchParams,
@@ -61,17 +149,30 @@ export default async function DoulaTeamPage({
   ]);
 
   const notice = NOTICES[query.error ?? ""] ?? NOTICES[query.saved ?? ""];
-  const now = new Date();
-  const pending = invites.filter((invite) => inviteStatus(invite, now) === "pending");
-  const lapsed = invites.filter((invite) => inviteStatus(invite, now) === "expired");
-  const unmatched = matches.filter((row) => !row.primaryDoulaUserId);
   const base = appUrl();
 
-  const stats = [
-    { label: "On the roster", value: roster.length, tone: "ink" as const },
-    { label: "Invites pending", value: pending.length, tone: "ink" as const },
-    { label: "Families unmatched", value: unmatched.length, tone: "coral" as const },
-  ];
+  // Two grids, one shape: people who work here and families who are carried here, each
+  // row carrying whether their account is live or still an unopened invite (TOK-57).
+  const accounts = teamAccounts({ members: roster, invites });
+  const grouped = groupTeamAccounts(accounts);
+  const families = familyAccounts(
+    matches.map((row) => ({
+      clientId: row.clientId,
+      name: row.clientName,
+      email: row.email,
+      phone: row.phone,
+      edd: row.edd,
+      city: row.city,
+      region: row.region,
+      postalCode: row.postalCode,
+      serviceType: row.serviceType,
+      stage: row.stage,
+      primaryDoulaUserId: row.primaryDoulaUserId,
+      primaryDoulaName: row.primaryDoulaName,
+      access: { status: row.portalStatus, userId: row.portalUserId },
+    })),
+  );
+  const unmatched = families.filter((family) => !family.matched);
 
   return (
     <div className="space-y-5">
@@ -82,8 +183,8 @@ export default async function DoulaTeamPage({
             Team
           </h1>
           <p className="mt-1.5 text-[14.5px] leading-relaxed text-muted-foreground">
-            Who works here, who is still deciding, and which doula is primary on each
-            family. Invites expire after {INVITE_TTL_DAYS} days.
+            Who works here, who is still deciding, and which doula each family belongs to.
+            Invites stay live for {INVITE_TTL_DAYS} days.
           </p>
         </div>
         <SettingsTabs />
@@ -102,227 +203,155 @@ export default async function DoulaTeamPage({
         </p>
       ) : null}
 
-      <section className="grid grid-cols-3 gap-3">
-        {stats.map((stat) => (
-          <article key={stat.label} className="rounded-xl bg-card p-4 ring-1 ring-teal/15">
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-heading text-xl text-teal-ink">Team member accounts</h2>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+              {grouped.active.length} here
+              {grouped.pending.length > 0
+                ? ` · ${grouped.pending.length} still deciding`
+                : null}
+              {grouped.expired.length > 0 ? ` · ${grouped.expired.length} lapsed` : null}
+            </p>
+          </div>
+          {manages ? <AddTeamMemberDialog /> : null}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {grouped.active.map((account) => (
+            <TeamAccountCard
+              key={account.key}
+              account={account}
+              manages={manages}
+              base={base}
+            />
+          ))}
+        </div>
+
+        {grouped.pending.length > 0 || grouped.expired.length > 0 ? (
+          <div className="space-y-2 pt-1">
             <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              {stat.label}
+              Waiting on them
             </p>
-            <p
-              className={cn(
-                "mt-2 font-heading text-[26px] font-semibold leading-none tabular-nums",
-                stat.tone === "coral" && stat.value > 0 ? "text-coral" : "text-teal-ink",
-              )}
-            >
-              {stat.value}
-            </p>
-          </article>
-        ))}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {[...grouped.pending, ...grouped.expired].map((account) => (
+                <TeamAccountCard
+                  key={account.key}
+                  account={account}
+                  manages={manages}
+                  base={base}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-        <article className="rounded-xl bg-card ring-1 ring-teal/15">
-          <div className="border-b border-teal/10 px-5 py-3.5">
-            <h2 className="font-heading text-xl text-teal-ink">Roster</h2>
-            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-              Everyone with a membership in this workspace.
-            </p>
-          </div>
-          <ul className="divide-y divide-teal/10">
-            {roster.map((member) => (
-              <li
-                key={member.membershipId}
-                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
-              >
-                <div className="min-w-0">
-                  <p className="text-[14px] font-semibold text-teal-ink">
-                    {member.name}
-                    {member.credentialsLabel ? (
-                      <span className="ml-1.5 text-[12px] font-medium text-muted-foreground">
-                        {member.credentialsLabel}
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
-                    {member.email} · joined {format(member.joinedAt, "MMM d, yyyy")}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px] tabular-nums text-muted-foreground">
-                    {member.primaryClients} primary
-                  </span>
-                  <Badge
-                    variant="secondary"
-                    className={
-                      member.role === "doula"
-                        ? "bg-teal/12 text-teal-ink"
-                        : "bg-teal-ink/90 text-cloud"
-                    }
-                  >
-                    {roleLabel(member.role)}
-                  </Badge>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="rounded-xl bg-card ring-1 ring-teal/15">
-          <div className="border-b border-teal/10 px-5 py-3.5">
-            <h2 className="font-heading text-xl text-teal-ink">Invite a doula</h2>
-            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-              They get an email with an accept link. Ownership is not handed out by invite.
-            </p>
-          </div>
-          <div className="px-5 py-4">
-            {manages ? (
-              <form action={inviteStaffAction} className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="inviteEmail">Work email</Label>
-                  <Input
-                    id="inviteEmail"
-                    name="email"
-                    type="email"
-                    required
-                    placeholder="name@practice.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="inviteRole">Role</Label>
-                  <select id="inviteRole" name="role" className={SELECT_CLASS} defaultValue="doula">
-                    {INVITABLE_ROLES.map((role) => (
-                      <option key={role} value={role}>
-                        {roleLabel(role)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <Button type="submit" size="sm">
-                  Send invite
-                </Button>
-              </form>
-            ) : (
-              <p className="text-[13px] text-muted-foreground">
-                Your founder or an admin sends invites. You can see the roster here.
-              </p>
-            )}
-          </div>
-        </article>
-      </section>
-
-      <section className="rounded-xl bg-card ring-1 ring-teal/15">
-        <div className="border-b border-teal/10 px-5 py-3.5">
-          <h2 className="font-heading text-xl text-teal-ink">Invites waiting</h2>
+      <section className="space-y-3">
+        <div>
+          <h2 className="font-heading text-xl text-teal-ink">Family accounts</h2>
           <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-            Not accepted yet, not expired. The link is the whole credential — share it only
-            with the person it names.
+            {families.length} famil{families.length === 1 ? "y" : "ies"}
+            {unmatched.length > 0 ? (
+              <span className="text-coral"> · {unmatched.length} still without a doula</span>
+            ) : null}
+            . Matching a doula also puts the family on her Clients list; nobody loses a
+            family they already carry.
           </p>
         </div>
-        {pending.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground">
-            Nobody is mid-join. {lapsed.length > 0 ? `${lapsed.length} invite${lapsed.length === 1 ? " has" : "s have"} expired.` : "Send one above."}
-          </p>
-        ) : (
-          <ul className="divide-y divide-teal/10">
-            {pending.map((invite) => (
-              <li
-                key={invite.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
-              >
-                <div className="min-w-0">
-                  <p className="text-[14px] font-semibold text-teal-ink">{invite.email}</p>
-                  <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-                    {roleLabel(invite.role)} · expires {format(invite.expiresAt, "MMM d")}
-                  </p>
-                  <p className="mt-1 break-all font-mono text-[11.5px] text-muted-foreground">
-                    {inviteUrl(base, invite.token)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="bg-coral/12 text-coral">
-                    Pending
-                  </Badge>
-                  {manages ? (
-                    <form action={revokeInviteAction}>
-                      <input type="hidden" name="inviteId" value={invite.id} />
-                      <Button type="submit" size="sm" variant="outline">
-                        Withdraw
-                      </Button>
-                    </form>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
-      <section className="rounded-xl bg-card ring-1 ring-teal/15">
-        <div className="border-b border-teal/10 px-5 py-3.5">
-          <h2 className="font-heading text-xl text-teal-ink">Match · primary doula</h2>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-            The primary is recorded on the family&apos;s engagement. Matching a doula also
-            puts the family on their Clients list; nobody loses a family they already carry.
-          </p>
-        </div>
-        {matches.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground">
+        {families.length === 0 ? (
+          <p className="rounded-xl bg-card px-5 py-6 text-sm text-muted-foreground ring-1 ring-teal/15">
             No families yet. Share your profile QR or a Book Consult link.
           </p>
         ) : (
-          <ul className="divide-y divide-teal/10">
-            {matches.map((row) => (
-              <li
-                key={row.clientId}
-                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
-              >
-                <div className="min-w-0">
-                  <Link
-                    href={`/doula/clients/${row.clientId}`}
-                    className="text-[14px] font-semibold text-teal-ink hover:underline"
-                  >
-                    {row.clientName}
-                  </Link>
-                  <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-                    {row.stage ? stageLabel(row.stage) : "No stage"} ·{" "}
-                    {row.primaryDoulaName ? (
-                      <span className="text-teal-ink">Primary: {row.primaryDoulaName}</span>
-                    ) : (
-                      <span className="text-coral">No primary yet</span>
-                    )}
-                  </p>
-                </div>
-                {manages ? (
-                  <form action={assignPrimaryDoulaAction} className="flex items-center gap-2">
-                    <input type="hidden" name="clientId" value={row.clientId} />
-                    <label className="sr-only" htmlFor={`match-${row.clientId}`}>
-                      Primary doula for {row.clientName}
-                    </label>
-                    <select
-                      id={`match-${row.clientId}`}
-                      name="doulaUserId"
-                      className={cn(SELECT_CLASS, "w-[13rem]")}
-                      defaultValue={row.primaryDoulaUserId ?? ""}
-                    >
-                      <option value="">No primary</option>
-                      {roster.map((member) => (
-                        <option key={member.userId} value={member.userId}>
-                          {member.name} · {roleLabel(member.role)}
-                        </option>
-                      ))}
-                    </select>
-                    <Button type="submit" size="sm" variant="outline">
-                      Set
-                    </Button>
-                  </form>
-                ) : (
-                  <span className="text-[12.5px] text-muted-foreground">
-                    {row.primaryDoulaName ?? "Unassigned"}
-                  </span>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {families.map((family) => (
+              <article
+                key={family.clientId}
+                className={cn(
+                  "flex flex-col rounded-xl bg-card p-4 ring-1",
+                  family.matched ? "ring-teal/15" : "ring-coral/20",
                 )}
-              </li>
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <Link
+                    href={`/doula/clients/${family.clientId}`}
+                    className="text-[14.5px] font-semibold text-teal-ink hover:underline"
+                  >
+                    {family.name}
+                  </Link>
+                  <StatusChip status={family.portal} />
+                </div>
+                <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
+                  {family.email}
+                  {family.phone ? ` · ${family.phone}` : null}
+                </p>
+                <dl className="mt-2.5 space-y-1 text-[12.5px] text-muted-foreground">
+                  {family.location ? (
+                    <div className="flex gap-1.5">
+                      <dt className="text-teal-ink/70">Lives</dt>
+                      <dd>{family.location}</dd>
+                    </div>
+                  ) : null}
+                  {family.edd ? (
+                    <div className="flex gap-1.5">
+                      <dt className="text-teal-ink/70">Due</dt>
+                      <dd>{format(new Date(`${family.edd}T12:00:00`), "MMM d, yyyy")}</dd>
+                    </div>
+                  ) : null}
+                  {family.serviceType ? (
+                    <div className="flex gap-1.5">
+                      <dt className="text-teal-ink/70">Wants</dt>
+                      <dd>{serviceTypeLabel(family.serviceType)}</dd>
+                    </div>
+                  ) : null}
+                  {family.stage ? (
+                    <div className="flex gap-1.5">
+                      <dt className="text-teal-ink/70">Stage</dt>
+                      <dd>{stageLabel(family.stage)}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+
+                <div className="mt-auto pt-3">
+                  {manages ? (
+                    <form action={assignPrimaryDoulaAction} className="flex items-center gap-2">
+                      <input type="hidden" name="clientId" value={family.clientId} />
+                      <label className="sr-only" htmlFor={`match-${family.clientId}`}>
+                        Primary doula for {family.name}
+                      </label>
+                      <select
+                        id={`match-${family.clientId}`}
+                        name="doulaUserId"
+                        className={SELECT_CLASS}
+                        defaultValue={family.primaryDoulaUserId ?? ""}
+                      >
+                        <option value="">Nobody yet</option>
+                        {roster.map((member) => (
+                          <option key={member.userId} value={member.userId}>
+                            {member.name} · {roleLabel(member.role)}
+                          </option>
+                        ))}
+                      </select>
+                      <Button type="submit" size="sm" variant="outline">
+                        Set
+                      </Button>
+                    </form>
+                  ) : (
+                    <p className="text-[12.5px] text-muted-foreground">
+                      {family.primaryDoulaName ? (
+                        <span className="text-teal-ink">With {family.primaryDoulaName}</span>
+                      ) : (
+                        <span className="text-coral">No doula yet</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </article>
             ))}
-          </ul>
+          </div>
         )}
       </section>
     </div>

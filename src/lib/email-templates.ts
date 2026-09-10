@@ -19,7 +19,9 @@ const TRIGGER_VARS: Record<string, readonly string[]> = {
   client_portal_invite: ["invite_url"],
   agreement_sent: ["sign_url"],
   invoice_due: ["invoice_number"],
-  doula_invited: ["invite_url", "invite_role", "token"],
+  // `invitee_name` is the colleague's own name, typed by the person inviting her in the
+  // Add-team-member popup (TOK-57) — a display name like `doula_name`, never a form answer.
+  doula_invited: ["invite_url", "invite_role", "invitee_name", "token"],
   form_reminder: ["open_forms"],
 };
 
