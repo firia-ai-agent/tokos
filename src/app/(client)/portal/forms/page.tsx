@@ -26,6 +26,10 @@ export default async function PortalFormsPage() {
       and(
         eq(formAssignments.organizationId, session.organizationId),
         eq(formAssignments.clientId, session.clientId),
+        // Defence in depth (TOK-50). The picker only offers family templates and the
+        // assign actions refuse staff ones; this makes a bad row written by an older
+        // build invisible here too, rather than handing a family "Doula's Birth Log".
+        eq(formTemplates.audience, "family"),
       ),
     )
     .orderBy(desc(formAssignments.updatedAt));

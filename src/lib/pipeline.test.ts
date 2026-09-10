@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   advanceAfterEvent,
@@ -14,7 +16,11 @@ import {
   PIPELINE_STAGES,
   plannedHops,
   requiresBackwardConfirm,
+  staffStageFilterLabel,
+  staffStageLabel,
+  staffStageOptions,
   stageLabel,
+  DOULA_STAGE_LABELS,
   STAGE_HINTS,
   STAGE_LABELS,
 } from "./pipeline";
@@ -335,4 +341,89 @@ describe("stage labels", () => {
     // Staff keep the raw value, because a code they can grep is the useful answer.
     expect(stageLabel("some_new_stage")).toBe("some_new_stage");
   });
+});
+
+
+/**
+ * TOK-49 soft fold. Vera signed in as Priya — a solo doula inside NOVA — and read "New
+ * lead" over the two families she is actually at the births of. The stage words a doula
+ * reads are hers; the agency keeps the funnel vocabulary it earns.
+ */
+describe("staff stage labels by persona (TOK-49 soft fold)", () => {
+  it("gives an agency the pipeline words unchanged", () => {
+    for (const stage of PIPELINE_STAGES) {
+      expect(staffStageLabel("agency", stage)).toBe(STAGE_LABELS[stage]);
+    }
+  });
+
+  it("never shows a doula the word 'lead'", () => {
+    for (const stage of PIPELINE_STAGES) {
+      expect(staffStageLabel("doula", stage).toLowerCase()).not.toContain("lead");
+    }
+    expect(staffStageLabel("doula", "new_lead")).toBe("New family");
+  });
+
+  it("never shows a doula the word 'funnel' either", () => {
+    for (const label of Object.values(DOULA_STAGE_LABELS)) {
+      expect(label.toLowerCase()).not.toContain("funnel");
+    }
+  });
+
+  it("covers every canonical stage in both maps, so neither can go missing", () => {
+    for (const stage of PIPELINE_STAGES) {
+      expect(DOULA_STAGE_LABELS[stage]).toBeTruthy();
+      expect(staffStageLabel("doula", stage)).toBeTruthy();
+    }
+  });
+
+  it("shares every stage it does not deliberately override", () => {
+    const overridden = PIPELINE_STAGES.filter(
+      (stage) => DOULA_STAGE_LABELS[stage] !== STAGE_LABELS[stage],
+    );
+    expect(overridden).toEqual(["new_lead", "outreach_sent"]);
+  });
+
+  it("falls back to something readable for a stage neither map knows", () => {
+    expect(staffStageLabel("doula", "banana")).toBe("banana");
+    expect(staffStageLabel("agency", "banana")).toBe(stageLabel("banana"));
+  });
+
+  it("builds the board filter from the same map, in lifecycle order", () => {
+    const doulaOptions = staffStageOptions("doula");
+    expect(doulaOptions.map((option) => option.value)).toEqual([...PIPELINE_STAGES]);
+    expect(doulaOptions.map((option) => option.label)).not.toContain("New lead");
+    expect(staffStageOptions("agency").map((option) => option.label)).toContain("New lead");
+  });
+
+  it("heads that filter with care wording for a doula", () => {
+    expect(staffStageFilterLabel("agency")).toBe("Stage");
+    expect(staffStageFilterLabel("doula")).toBe("Care stage");
+  });
+});
+
+
+/**
+ * The Veri bar for this fold: the map is shared, and no page re-types a stage string.
+ * "Open pipeline" survived on Priya's Home for a whole milestone precisely because one
+ * page hardcoded it instead of asking a helper.
+ */
+describe("no doula surface hardcodes stage vocabulary", () => {
+  const DOULA_PAGES = [
+    ["src", "app", "(doula)", "doula", "page.tsx"],
+    ["src", "app", "(doula)", "doula", "clients", "page.tsx"],
+    ["src", "app", "(doula)", "doula", "clients", "[id]", "page.tsx"],
+  ];
+
+  for (const parts of DOULA_PAGES) {
+    const label = parts.slice(2).join("/");
+
+    it(`asks the shared helper rather than typing the words: ${label}`, () => {
+      const source = readFileSync(join(process.cwd(), ...parts), "utf8");
+      expect(source).not.toContain("STAGE_LABELS");
+      expect(source).not.toContain('"Open pipeline"');
+      expect(source).not.toContain(">Open pipeline<");
+      // Persona-blind `stageLabel(` would print agency words to a doula.
+      expect(source).not.toMatch(/[^f]stageLabel\(/);
+    });
+  }
 });

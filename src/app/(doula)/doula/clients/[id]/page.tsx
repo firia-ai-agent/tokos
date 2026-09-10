@@ -17,9 +17,9 @@ import {
   resources,
 } from "@/db/schema";
 import { requireStaff } from "@/lib/tenancy";
-import { allowedDoulaActions, stageLabel } from "@/lib/pipeline";
+import { allowedDoulaActions, staffStageLabel } from "@/lib/pipeline";
 import { getFunnelFlags } from "@/lib/funnel";
-import { leadNotes, stageHistory, teamRoster } from "@/lib/queries";
+import { clientSendOptions, leadNotes, stageHistory, teamRoster } from "@/lib/queries";
 import { canManageTeam, roleLabel } from "@/lib/team";
 import { shellPersona } from "@/lib/shell-persona";
 import { assignPrimaryDoulaAction } from "@/app/actions/team";
@@ -45,7 +45,14 @@ import {
   sendClientMessageAction,
   remindFormsAction,
 } from "@/app/actions/doula";
-import { coCompleteFormAction, reopenFormAction } from "@/app/actions/forms";
+import {
+  assignFormsToClientAction,
+  coCompleteFormAction,
+  reopenFormAction,
+} from "@/app/actions/forms";
+import { shareResourcesWithClientAction } from "@/app/actions/resources";
+import { PickHeading, PickList } from "@/components/brand/send-picker";
+import { Input } from "@/components/ui/input";
 import { FormAnswers, FormFieldInputs, PhiNote } from "@/components/brand/forms";
 import { MessageComposer, MessageThread } from "@/components/brand/messages";
 import { MarkThreadRead } from "@/components/brand/mark-thread-read";
@@ -58,10 +65,17 @@ export default async function ClientDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ stageError?: string }>;
+  searchParams: Promise<{
+    stageError?: string;
+    formsSent?: string;
+    formsError?: string;
+    resourcesShared?: string;
+    resourcesError?: string;
+  }>;
 }) {
   const { id } = await params;
-  const { stageError } = await searchParams;
+  const { stageError, formsSent, formsError, resourcesShared, resourcesError } =
+    await searchParams;
   const staff = await requireStaff();
   const db = getDb();
   const [client] = await db
@@ -181,6 +195,12 @@ export default async function ClientDetailPage({
     )
     .orderBy(desc(resourceShares.sharedAt));
 
+  // What is still sendable to this family: family-audience templates she has no open
+  // copy of, and handouts not already on her shelf. Family is the page, so the pickers
+  // below carry no family dropdown at all (TOK-50 / CRM-FIRST §2A).
+  const sendable = await clientSendOptions(staff.organizationId, client.id);
+  const familyName = client.preferredName ?? client.displayName;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -190,7 +210,7 @@ export default async function ClientDetailPage({
             {client.email} · due {client.edd ?? "—"}
           </p>
         </div>
-        <Badge className="text-sm">{stageLabel(funnel.stage)}</Badge>
+        <Badge className="text-sm">{staffStageLabel(persona, funnel.stage)}</Badge>
       </div>
 
       <Card>
@@ -395,8 +415,11 @@ export default async function ClientDetailPage({
             {events.length === 0 ? <p className="text-muted-foreground">No moves yet.</p> : null}
             {events.map((event) => (
               <p key={event.id} className="text-muted-foreground">
-                {format(event.at, "MMM d")} · {event.fromStage ? stageLabel(event.fromStage) : "—"}{" "}
-                → <span className="font-medium text-teal-ink">{stageLabel(event.toStage)}</span>
+                {format(event.at, "MMM d")} ·{" "}
+                {event.fromStage ? staffStageLabel(persona, event.fromStage) : "—"} →{" "}
+                <span className="font-medium text-teal-ink">
+                  {staffStageLabel(persona, event.toStage)}
+                </span>
               </p>
             ))}
           </CardContent>
@@ -406,31 +429,89 @@ export default async function ClientDetailPage({
       <Card id="forms" className="scroll-mt-24">
         <CardHeader className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle>Forms (co-complete)</CardTitle>
+            <CardTitle>Forms</CardTitle>
             <PhiNote className="mt-1" />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/doula/forms"
-              className="rounded-md bg-teal/12 px-2.5 py-1 text-[12px] font-semibold text-teal-ink hover:bg-teal/20"
-            >
-              Assign another
-            </Link>
-            <form action={remindFormsAction.bind(null, client.id)}>
-              <Button type="submit" size="sm" variant="outline">
-                Remind by email
-              </Button>
-            </form>
-          </div>
+          <form action={remindFormsAction.bind(null, client.id)}>
+            <Button type="submit" size="sm" variant="outline">
+              Email a reminder
+            </Button>
+          </form>
         </CardHeader>
         <CardContent className="space-y-4">
+          {formsSent ? (
+            <p className="rounded-lg bg-teal/10 px-3 py-2 text-[12.5px] font-semibold text-teal-ink ring-1 ring-teal/20">
+              Sent {formsSent} form{formsSent === "1" ? "" : "s"} to {familyName}. They are in
+              the portal now.
+            </p>
+          ) : null}
+          {formsError ? (
+            <p className="rounded-lg bg-coral/12 px-3 py-2 text-[12.5px] font-semibold text-coral">
+              {formsError === "pick"
+                ? "Tick at least one form first."
+                : formsError === "staff_only"
+                  ? "That one is a staff form — it stays on your side, not in the portal."
+                  : `${familyName} already has those open.`}
+            </p>
+          ) : null}
+
+          {/* Send a form: the family is the page, so this picks templates only. One
+              button, however many are ticked (TOK-50 / CRM-FIRST §2A). */}
+          <form
+            action={assignFormsToClientAction}
+            className="space-y-3 rounded-lg bg-cloud p-3.5 ring-1 ring-teal/12"
+          >
+            <input type="hidden" name="clientId" value={client.id} />
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <PickHeading>Send a form</PickHeading>
+              <span className="text-[11.5px] text-muted-foreground">
+                Family forms only — staff notes stay on your side
+              </span>
+            </div>
+            <PickList
+              name="templateIds"
+              columns={2}
+              items={sendable.formTemplates.map((template) => ({
+                id: template.id,
+                label: template.title,
+                hint: `${template.schemaJson.fields.length} question${
+                  template.schemaJson.fields.length === 1 ? "" : "s"
+                }`,
+              }))}
+              emptyLabel={`${familyName} already has every family form in your library. Build another on Forms.`}
+            />
+            {sendable.formTemplates.length > 0 ? (
+              <div className="flex flex-wrap items-end gap-2.5">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  Fills it in
+                  <select
+                    name="assigneeRole"
+                    defaultValue="either"
+                    className="mt-1 h-9 w-full rounded-md border border-teal/20 bg-card px-2.5 text-[13px] text-teal-ink focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/25"
+                  >
+                    <option value="either">Either of us</option>
+                    <option value="client">Family</option>
+                    <option value="doula">Me, on a visit</option>
+                  </select>
+                </label>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  Due
+                  <Input type="date" name="dueAt" className="mt-1 h-9 w-[10rem]" />
+                </label>
+                <label className="flex items-center gap-2 pb-2 text-[12.5px] text-teal-ink">
+                  <input type="checkbox" name="notify" defaultChecked className="size-3.5 accent-teal" />
+                  Email a reminder
+                </label>
+                <Button type="submit" size="sm">
+                  Send to family
+                </Button>
+              </div>
+            ) : null}
+          </form>
+
           {forms.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No forms assigned yet. Pick a template on{" "}
-              <Link href="/doula/forms" className="font-semibold text-teal hover:underline">
-                Forms
-              </Link>
-              .
+              Nothing sent yet. Tick a form above and send it.
             </p>
           ) : null}
           {forms.map(({ assignment, template, submission }) => (
@@ -495,16 +576,50 @@ export default async function ClientDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Resources shared</CardTitle>
+          <CardTitle>Resources</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+        <CardContent className="space-y-3 text-sm">
+          {resourcesShared ? (
+            <p className="rounded-lg bg-teal/10 px-3 py-2 text-[12.5px] font-semibold text-teal-ink ring-1 ring-teal/20">
+              Added {resourcesShared} handout{resourcesShared === "1" ? "" : "s"} to{" "}
+              {familyName}&rsquo;s portal.
+            </p>
+          ) : null}
+          {resourcesError ? (
+            <p className="rounded-lg bg-coral/12 px-3 py-2 text-[12.5px] font-semibold text-coral">
+              {resourcesError === "pick"
+                ? "Tick at least one handout first."
+                : `${familyName} already has those.`}
+            </p>
+          ) : null}
+
+          {/* Share a handout: same shape as the form sender above. */}
+          <form
+            action={shareResourcesWithClientAction}
+            className="space-y-3 rounded-lg bg-cloud p-3.5 ring-1 ring-teal/12"
+          >
+            <input type="hidden" name="clientId" value={client.id} />
+            <PickHeading>Share a handout</PickHeading>
+            <PickList
+              name="resourceIds"
+              columns={2}
+              items={sendable.resources.map((resource) => ({
+                id: resource.id,
+                label: resource.title,
+                hint: resource.kind,
+              }))}
+              emptyLabel={`${familyName} already has everything in your library. Write another on Resources.`}
+            />
+            {sendable.resources.length > 0 ? (
+              <Button type="submit" size="sm">
+                Add to their portal
+              </Button>
+            ) : null}
+          </form>
+
           {shared.length === 0 ? (
             <p className="text-muted-foreground">
-              Nothing shared yet. Send a handout from{" "}
-              <Link href="/doula/resources" className="font-semibold text-teal hover:underline">
-                Resources
-              </Link>
-              .
+              Nothing on their shelf yet. Tick a handout above and add it.
             </p>
           ) : (
             shared.map(({ share, resource }) => (

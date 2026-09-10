@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { formAssignments, formSubmissions, formTemplates } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { appUrl } from "@/lib/env";
+import { assignableToFamily, isFormAudience } from "@/lib/form-audience";
 import {
   assertAnswersNotInEmail,
   formReminderVars,
@@ -63,6 +64,10 @@ export async function createFormTemplateAction(formData: FormData) {
   const staff = await requireStaff();
   const title = String(formData.get("title") ?? "").trim();
   const kind = String(formData.get("kind") ?? "intake").trim() || "intake";
+  // A template the doula builds for herself must be markable as staff work up front,
+  // or the only way to keep it off a family's portal is to remember not to send it.
+  const audienceRaw = String(formData.get("audience") ?? "family");
+  const audience = isFormAudience(audienceRaw) ? audienceRaw : "family";
   const fields = parseFieldSpec(String(formData.get("fields") ?? ""));
 
   if (!title) redirect("/doula/forms?error=title");
@@ -75,6 +80,7 @@ export async function createFormTemplateAction(formData: FormData) {
     organizationId: staff.organizationId,
     title,
     kind,
+    audience,
     schemaJson: { fields },
     version: 1,
   });
@@ -86,7 +92,7 @@ export async function createFormTemplateAction(formData: FormData) {
     action: "form_template.created",
     entityType: "form_template",
     entityId: id,
-    metadata: { field_count: String(fields.length), kind },
+    metadata: { field_count: String(fields.length), kind, audience },
   });
 
   revalidateForms();
@@ -101,6 +107,9 @@ export async function assignFormAction(formData: FormData) {
   const { staff, client } = await requireStaffClient(clientId);
   const template = await loadTemplate(staff.organizationId, templateId);
   if (!template) redirect("/doula/forms?error=assign");
+  // The picker only offers family templates, but a posted id is a posted id. A staff
+  // form on a family's Incomplete list is the Dubsado bug TOK-50 exists to not repeat.
+  if (!assignableToFamily(template)) redirect("/doula/forms?error=staff_only");
 
   const db = getDb();
   const [existing] = await db
@@ -272,4 +281,205 @@ export async function remindAssignmentAction(formData: FormData) {
   });
 
   revalidateForms(client.id);
+}
+
+/**
+ * Batch send (TOK-50 / CRM-FIRST §2).
+ *
+ * The old library made a doula repeat the same family pick once per card: every template
+ * carried its own `<select>` and its own Assign button. Sending four forms to one family
+ * was four round trips and four chances to pick the wrong name. These two actions take
+ * the whole selection at once — templates × families — and write it in one pass.
+ *
+ * Rules that survive the batch, because they are the ones that cost something:
+ *  - audience: a staff template is skipped, never assigned. Silently would be a lie, so
+ *    the redirect says how many were skipped.
+ *  - idempotence: a family who already has that form open is left alone rather than
+ *    given a second copy of the same questions.
+ *  - tenancy: templates and clients are both re-read org-scoped before anything is written.
+ */
+async function sendFormsToClients(input: {
+  organizationId: string;
+  actorUserId: string;
+  templateIds: string[];
+  clientIds: string[];
+  assigneeRole: string;
+  dueAt: Date | null;
+  notify: boolean;
+}) {
+  const db = getDb();
+  const templateIds = [...new Set(input.templateIds.filter(Boolean))];
+  const clientIds = [...new Set(input.clientIds.filter(Boolean))];
+  if (templateIds.length === 0 || clientIds.length === 0) {
+    return { sent: 0, skippedStaff: 0, skippedDuplicate: 0, clientIds: [] as string[] };
+  }
+
+  const templates = await db
+    .select()
+    .from(formTemplates)
+    .where(
+      and(
+        eq(formTemplates.organizationId, input.organizationId),
+        inArray(formTemplates.id, templateIds),
+      ),
+    );
+
+  const sendable = templates.filter((template) => assignableToFamily(template));
+  const skippedStaff = templates.length - sendable.length;
+  if (sendable.length === 0) {
+    return { sent: 0, skippedStaff, skippedDuplicate: 0, clientIds: [] as string[] };
+  }
+
+  // One read of what is already open, rather than a select per pair.
+  const openRows = await db
+    .select({ templateId: formAssignments.templateId, clientId: formAssignments.clientId })
+    .from(formAssignments)
+    .where(
+      and(
+        eq(formAssignments.organizationId, input.organizationId),
+        eq(formAssignments.status, "incomplete"),
+        inArray(formAssignments.clientId, clientIds),
+      ),
+    );
+  const alreadyOpen = new Set(openRows.map((row) => `${row.templateId}:${row.clientId}`));
+
+  const assigneeRole = ["client", "doula", "either"].includes(input.assigneeRole)
+    ? input.assigneeRole
+    : "either";
+
+  const values: Array<typeof formAssignments.$inferInsert> = [];
+  let skippedDuplicate = 0;
+  for (const client of clientIds) {
+    for (const template of sendable) {
+      if (alreadyOpen.has(`${template.id}:${client}`)) {
+        skippedDuplicate += 1;
+        continue;
+      }
+      values.push({
+        id: newId(),
+        organizationId: input.organizationId,
+        templateId: template.id,
+        clientId: client,
+        status: "incomplete",
+        assigneeRole,
+        dueAt: input.dueAt,
+      });
+    }
+  }
+
+  if (values.length > 0) await db.insert(formAssignments).values(values);
+
+  const touched = [...new Set(values.map((row) => row.clientId))];
+
+  if (input.notify && touched.length > 0) {
+    for (const clientId of touched) {
+      const { client } = await requireStaffClient(clientId);
+      const [open] = await db
+        .select({ n: count() })
+        .from(formAssignments)
+        .where(
+          and(
+            eq(formAssignments.organizationId, input.organizationId),
+            eq(formAssignments.clientId, clientId),
+            eq(formAssignments.status, "incomplete"),
+          ),
+        );
+      // Counts and a link only — the questions stay behind the portal login.
+      await enqueueEmail({
+        organizationId: input.organizationId,
+        triggerKey: "form_reminder",
+        toEmail: client.email,
+        vars: formReminderVars({
+          clientName: client.preferredName ?? client.displayName,
+          portalUrl: `${appUrl()}/portal/forms`,
+          openCount: Number(open?.n ?? 1),
+        }),
+      });
+    }
+  }
+
+  // Counts and ids only — a template title is the doula's wording, an answer is never here.
+  if (values.length > 0) {
+    await writeAudit({
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId,
+      action: "form_assignment.batch_created",
+      entityType: "form_assignment",
+      entityId: values[0]!.id,
+      metadata: {
+        sent: String(values.length),
+        families: String(touched.length),
+        templates: String(sendable.length),
+        skipped_staff: String(skippedStaff),
+        skipped_duplicate: String(skippedDuplicate),
+      },
+    });
+  }
+
+  return { sent: values.length, skippedStaff, skippedDuplicate, clientIds: touched };
+}
+
+/** Every family is already known here: `/doula/clients/[id]` sends to this one record. */
+export async function assignFormsToClientAction(formData: FormData) {
+  const clientId = String(formData.get("clientId") ?? "");
+  if (!clientId) redirect("/doula/forms?error=assign");
+  const { staff, client } = await requireStaffClient(clientId);
+
+  const templateIds = formData.getAll("templateIds").map(String);
+  if (templateIds.length === 0) redirect(`/doula/clients/${client.id}?formsError=pick#forms`);
+
+  const dueRaw = String(formData.get("dueAt") ?? "").trim();
+  const parsedDue = dueRaw ? new Date(`${dueRaw}T12:00:00`) : null;
+
+  const result = await sendFormsToClients({
+    organizationId: staff.organizationId,
+    actorUserId: staff.userId,
+    templateIds,
+    clientIds: [client.id],
+    assigneeRole: String(formData.get("assigneeRole") ?? "either"),
+    dueAt: parsedDue && !Number.isNaN(parsedDue.getTime()) ? parsedDue : null,
+    notify: String(formData.get("notify") ?? "") === "on",
+  });
+
+  revalidateForms(client.id);
+  if (result.sent === 0) {
+    redirect(
+      `/doula/clients/${client.id}?formsError=${result.skippedStaff > 0 ? "staff_only" : "duplicate"}#forms`,
+    );
+  }
+  redirect(`/doula/clients/${client.id}?formsSent=${result.sent}#forms`);
+}
+
+/** The library path: N templates → N families, one button (`/doula/forms`). */
+export async function assignFormsToFamiliesAction(formData: FormData) {
+  const staff = await requireStaff();
+  const templateIds = formData.getAll("templateIds").map(String);
+  const clientIds = formData.getAll("clientIds").map(String);
+  if (templateIds.length === 0 || clientIds.length === 0) redirect("/doula/forms?error=assign");
+
+  // Assignment scope is the guard: a doula may only send to her own families, and
+  // `requireStaffClient` re-checks each one before a row is written for it.
+  for (const clientId of clientIds) await requireStaffClient(clientId);
+
+  const dueRaw = String(formData.get("dueAt") ?? "").trim();
+  const parsedDue = dueRaw ? new Date(`${dueRaw}T12:00:00`) : null;
+
+  const result = await sendFormsToClients({
+    organizationId: staff.organizationId,
+    actorUserId: staff.userId,
+    templateIds,
+    clientIds,
+    assigneeRole: String(formData.get("assigneeRole") ?? "either"),
+    dueAt: parsedDue && !Number.isNaN(parsedDue.getTime()) ? parsedDue : null,
+    notify: String(formData.get("notify") ?? "") === "on",
+  });
+
+  for (const clientId of result.clientIds) revalidateForms(clientId);
+  revalidateForms();
+  if (result.sent === 0) {
+    redirect(
+      `/doula/forms?error=${result.skippedStaff > 0 ? "staff_only" : "duplicate"}`,
+    );
+  }
+  redirect(`/doula/forms?created=assignment&sent=${result.sent}`);
 }

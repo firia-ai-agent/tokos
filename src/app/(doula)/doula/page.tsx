@@ -2,7 +2,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { requireStaff } from "@/lib/tenancy";
 import { needsAttentionQueue, revenueHome } from "@/lib/queries";
-import { stageLabel } from "@/lib/pipeline";
+import { staffStageLabel } from "@/lib/pipeline";
 import { reasonSummary } from "@/lib/needs-attention";
 import { homeClientsEmpty, homeCtaLabel, shellPersona } from "@/lib/shell-persona";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,9 @@ export default async function DoulaHomePage() {
   // person who books a consult is a family from the first minute.
   const persona = shellPersona(staff.membershipRole);
   const [home, attention] = await Promise.all([
-    revenueHome(staff.organizationId, staff.userId),
+    // Persona reaches the KPI hints too: "1 in funnel" over a doula's two families was
+    // the other half of the TOK-49 Priya fail.
+    revenueHome(staff.organizationId, staff.userId, persona),
     // Same rules the board and the leads tab use (TOK-49); an agency sees the practice,
     // a doula sees her own families.
     needsAttentionQueue(
@@ -164,7 +166,7 @@ export default async function DoulaHomePage() {
               href={attentionHref}
               className="shrink-0 rounded-md bg-cloud/15 px-2.5 py-1 text-[12px] font-semibold text-cloud hover:bg-cloud/25"
             >
-              Open pipeline
+              {homeCtaLabel(persona)}
             </Link>
           </div>
           <ul className="divide-y divide-teal/10">
@@ -184,7 +186,7 @@ export default async function DoulaHomePage() {
                       <p className="mt-0.5 text-[12.5px] text-coral">{reasonSummary(item)}</p>
                     </div>
                     <span className="shrink-0 rounded-md bg-teal/10 px-2.5 py-1 text-[11.5px] font-semibold text-teal-ink">
-                      {item.stageLabel}
+                      {staffStageLabel(persona, item.stage)}
                     </span>
                   </Link>
                 </li>
@@ -225,7 +227,7 @@ export default async function DoulaHomePage() {
                       {item.name}
                     </p>
                     <p className="mt-0.5 text-[12px] text-muted-foreground">
-                      EDD {item.eddLabel} · {stageLabel(item.stage)}
+                      EDD {item.eddLabel} · {staffStageLabel(persona, item.stage)}
                     </p>
                   </div>
                   <span className="shrink-0 rounded-full bg-teal-ink px-2.5 py-1 text-[11px] font-semibold text-cloud">
@@ -264,7 +266,7 @@ export default async function DoulaHomePage() {
                     Due {client.edd ?? "—"} · {client.city ?? "location TBD"}
                   </p>
                 </div>
-                <Badge variant="secondary">{stageLabel(stage)}</Badge>
+                <Badge variant="secondary">{staffStageLabel(persona, stage)}</Badge>
               </Link>
             ))}
           </div>

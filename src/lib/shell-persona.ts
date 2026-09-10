@@ -221,6 +221,34 @@ export function homeCtaLabel(persona: ShellPersona): string {
 }
 
 /**
+ * The hint under Home's "Active clients" tile (TOK-49 soft fold).
+ *
+ * The tile counts families a doula is assigned to; the hint says what state they are in.
+ * An agency reads its own funnel there. A doula does not have one — she has two families
+ * — and "1 in funnel" over their names was the second half of Vera's Priya fail. Care
+ * beats capture in both voices: whoever is in active care is named first.
+ */
+export function homeCaseloadHint(
+  persona: ShellPersona,
+  counts: { inCare: number; openLeads: number },
+): string {
+  const inCare = Math.max(0, counts.inCare);
+  const openLeads = Math.max(0, counts.openLeads);
+  if (inCare > 0) return `${inCare} in care`;
+  if (persona === "agency") return `${openLeads} in funnel`;
+  if (openLeads === 0) return "No families yet";
+  return `${openLeads} famil${openLeads === 1 ? "y" : "ies"}`;
+}
+
+/**
+ * The second line on a Needs-attention row for an open lead. "Keep the funnel moving" is
+ * the agency's own nudge; a doula is being told to get back to a person.
+ */
+export function openLeadNudge(persona: ShellPersona): string {
+  return persona === "agency" ? "Keep the funnel moving" : "Check in when you can";
+}
+
+/**
  * One line over the agency board (D7) naming what an assignment-scoped list cannot show:
  * how many families in the org still have nobody named as primary.
  */

@@ -4,9 +4,10 @@ import { requireStaff } from "@/lib/tenancy";
 import { listOrgClients, resourcesHub } from "@/lib/queries";
 import {
   createResourceAction,
-  shareResourceAction,
+  shareResourcesWithFamiliesAction,
   unshareResourceAction,
 } from "@/app/actions/resources";
+import { PickHeading, PickList } from "@/components/brand/send-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +16,11 @@ import { cn } from "@/lib/utils";
 
 const NOTICES: Record<string, { tone: "teal" | "coral"; text: string }> = {
   resource: { tone: "teal", text: "Saved to your library. Share it with a family below." },
-  share: { tone: "teal", text: "Shared. It is in the family's portal now." },
+  share: { tone: "teal", text: "Added to their portal." },
   title: { tone: "coral", text: "A resource needs a title." },
   empty: { tone: "coral", text: "Add a link or some text — a resource needs something to open." },
-  duplicate: { tone: "coral", text: "That family already has this resource." },
+  duplicate: { tone: "coral", text: "They already have those handouts." },
+  share_pick: { tone: "coral", text: "Tick at least one handout and one family." },
 };
 
 const SELECT_CLASS =
@@ -27,13 +29,14 @@ const SELECT_CLASS =
 export default async function DoulaResourcesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ created?: string; error?: string }>;
+  searchParams: Promise<{ created?: string; error?: string; shared?: string }>;
 }) {
   const query = await searchParams;
   const staff = await requireStaff();
   const hub = await resourcesHub(staff.organizationId);
   const clients = await listOrgClients(staff.organizationId, staff.userId);
   const notice = NOTICES[query.error ?? ""] ?? NOTICES[query.created ?? ""];
+  const sharedCount = Number(query.shared ?? 0);
 
   const shareCountFor = (resourceId: string) =>
     hub.shares.filter((row) => row.resource.id === resourceId).length;
@@ -79,8 +82,64 @@ export default async function DoulaResourcesPage({
           )}
         >
           {notice.text}
+          {notice.tone === "teal" && sharedCount > 0
+            ? ` ${sharedCount} handout${sharedCount === 1 ? "" : "s"} went out.`
+            : null}
         </p>
       ) : null}
+
+      {/* Share a handout (TOK-50 / CRM-FIRST §2B). The Family dropdown used to live in
+          every card; picking three handouts for one family meant three round trips.
+          One picker of handouts, one of families, one button. */}
+      <section className="rounded-xl bg-card ring-1 ring-teal/15">
+        <div className="border-b border-teal/10 px-5 py-3.5">
+          <h2 className="font-heading text-xl text-teal-ink">Share a handout</h2>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+            Tick the handouts, tick who they are for, add them once.
+          </p>
+        </div>
+        {hub.library.length === 0 || clients.length === 0 ? (
+          <p className="px-5 py-8 text-sm text-muted-foreground">
+            {hub.library.length === 0
+              ? "Nothing in the library yet. Write your first handout below."
+              : "No assigned families yet — a family lands here once she books a consult with you."}
+          </p>
+        ) : (
+          <form action={shareResourcesWithFamiliesAction} className="space-y-4 px-5 py-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <PickHeading>Handouts</PickHeading>
+                <PickList
+                  name="resourceIds"
+                  items={hub.library.map((resource) => ({
+                    id: resource.id,
+                    label: resource.title,
+                    hint: `${resource.kind} · with ${shareCountFor(resource.id)} famil${
+                      shareCountFor(resource.id) === 1 ? "y" : "ies"
+                    }`,
+                  }))}
+                  emptyLabel="Nothing in the library yet."
+                />
+              </div>
+              <div className="space-y-2">
+                <PickHeading>Families</PickHeading>
+                <PickList
+                  name="clientIds"
+                  items={clients.map(({ client }) => ({
+                    id: client.id,
+                    label: client.displayName,
+                    hint: client.edd ? `due ${client.edd}` : undefined,
+                  }))}
+                  emptyLabel="No assigned families yet."
+                />
+              </div>
+            </div>
+            <Button type="submit" size="sm">
+              Add to their portal
+            </Button>
+          </form>
+        )}
+      </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
         <article className="rounded-xl bg-card ring-1 ring-teal/15">
@@ -129,31 +188,6 @@ export default async function DoulaResourcesPage({
                       Open link ↗
                     </a>
                   ) : null}
-                  {clients.length === 0 ? (
-                    <p className="text-[12.5px] text-muted-foreground">
-                      No assigned families yet — assign a client to yourself first.
-                    </p>
-                  ) : (
-                    <form
-                      action={shareResourceAction}
-                      className="flex flex-wrap items-end gap-2 rounded-lg bg-cloud p-2.5 ring-1 ring-teal/10"
-                    >
-                      <input type="hidden" name="resourceId" value={resource.id} />
-                      <label className="min-w-[9rem] flex-1 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                        Share with
-                        <select name="clientId" className={cn(SELECT_CLASS, "mt-1")} required>
-                          {clients.map(({ client }) => (
-                            <option key={client.id} value={client.id}>
-                              {client.displayName}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <Button type="submit" size="sm">
-                        Share
-                      </Button>
-                    </form>
-                  )}
                 </li>
               ))}
             </ul>
@@ -217,7 +251,7 @@ export default async function DoulaResourcesPage({
         </div>
         {hub.shares.length === 0 ? (
           <p className="px-5 py-8 text-sm text-muted-foreground">
-            Nothing shared yet. Pick a resource above and send it to a family.
+            Nothing shared yet. Tick a handout and a family above.
           </p>
         ) : (
           <ul className="divide-y divide-teal/10">

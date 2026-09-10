@@ -10,11 +10,13 @@ import {
   esignArtifacts,
   formAssignments,
   formSubmissions,
+  formTemplates,
   invoices,
   portalMessages,
   resourceShares,
 } from "@/db/schema";
 import { SlotUnavailableError, type SlotRejection } from "@/lib/calendar";
+import { isFamilyAudience } from "@/lib/form-audience";
 import { readAnswers } from "@/lib/forms";
 import { beginCheckout, bookConsult, logClientContact, markAgreementSigned } from "@/lib/funnel";
 import { newId } from "@/lib/ids";
@@ -123,9 +125,12 @@ export async function completeFormAction(formData: FormData) {
   const assignmentId = String(formData.get("assignmentId") ?? "");
   if (!assignmentId) return;
   const db = getDb();
-  const [assignment] = await db
-    .select()
+  // Joined to the template so the audience gate is part of the read: a family may only
+  // submit her own forms, never a staff visit note that reached her by a bad row (TOK-50).
+  const [row] = await db
+    .select({ assignment: formAssignments, audience: formTemplates.audience })
     .from(formAssignments)
+    .innerJoin(formTemplates, eq(formTemplates.id, formAssignments.templateId))
     .where(
       and(
         eq(formAssignments.id, assignmentId),
@@ -134,7 +139,8 @@ export async function completeFormAction(formData: FormData) {
       ),
     )
     .limit(1);
-  if (!assignment) return;
+  if (!row || !isFamilyAudience(row.audience)) return;
+  const assignment = row.assignment;
   const answers = readAnswers(formData.entries());
   await db.insert(formSubmissions).values({
     id: newId(),

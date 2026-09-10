@@ -308,6 +308,13 @@ export const formTemplates = pgTable("form_templates", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   title: text("title").notNull(),
   kind: text("kind").notNull(),
+  /**
+   * `family` | `staff` (TOK-50). A staff template is doula/agency work — visit notes,
+   * the Birth Log — and may never be assigned into a family portal. Defaults to
+   * `family` so every row written before this column keeps behaving as it did.
+   * Read it through `@/lib/form-audience`, never as a bare string comparison.
+   */
+  audience: text("audience").notNull().default("family"),
   schemaJson: jsonb("schema_json").$type<{
     fields: Array<{ id: string; label: string; type: string; sensitive?: boolean }>;
   }>().notNull(),

@@ -811,12 +811,24 @@ async function main() {
   const intakeId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
   const preferencesId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   const postpartumId = "cccccccc-cccc-4ccc-8ccc-ccccccccccce";
+  // TOK-50: family worksheets, ported from the Dubsado crawl with the EHR chrome cut.
+  const partnerExpectationsId = "cccccccc-cccc-4ccc-8ccc-ccccccccccd1";
+  const intakeWorksheetId = "cccccccc-cccc-4ccc-8ccc-ccccccccccd2";
+  // TOK-50: staff work. These carry `audience: "staff"` and may never be assigned into a
+  // family portal — Dubsado put its postpartum visit and its Birth Log on the *client's*
+  // Incomplete list, so a family opened someone else's homework written in someone
+  // else's voice. The audience column, the assign guards and the portal reads all agree.
+  const prenatalNotesId = "cccccccc-cccc-4ccc-8ccc-ccccccccccd3";
+  const postpartumVisitId = "cccccccc-cccc-4ccc-8ccc-ccccccccccd4";
+  const seniorCheckInId = "cccccccc-cccc-4ccc-8ccc-ccccccccccd5";
+  const birthLogId = "cccccccc-cccc-4ccc-8ccc-ccccccccccd6";
   await db.insert(formTemplates).values([
     {
       id: intakeId,
       organizationId: ORG_ID,
       title: "Getting-to-know-you",
       kind: "intake",
+      audience: "family",
       schemaJson: {
         fields: [
           { id: "preferred_name", label: "What should we call you?", type: "text" },
@@ -838,6 +850,7 @@ async function main() {
       organizationId: ORG_ID,
       title: "Birth preferences",
       kind: "expectations",
+      audience: "family",
       schemaJson: {
         fields: [
           {
@@ -858,6 +871,7 @@ async function main() {
       organizationId: ORG_ID,
       title: "First two weeks at home",
       kind: "postpartum",
+      audience: "family",
       schemaJson: {
         // The last two are marked sensitive so the seeded demo shows the badge and the
         // "answers never leave the portal" rule against real content, not a placeholder.
@@ -879,6 +893,269 @@ async function main() {
             type: "textarea",
             sensitive: true,
           },
+        ],
+      },
+    },
+    {
+      // Dubsado called this "Support and Expectation Questionnaire (Birth Partner)".
+      // The questions underneath were already human; only the chrome around them was
+      // not. The partner signs their own name — nothing about "completing this record".
+      id: partnerExpectationsId,
+      organizationId: ORG_ID,
+      title: "Birth partner expectations",
+      kind: "expectations",
+      audience: "family",
+      schemaJson: {
+        fields: [
+          {
+            id: "partner_role",
+            label: "What role do you want to take at the birth?",
+            type: "textarea",
+          },
+          {
+            id: "doula_role",
+            label: "What would you most like Maya to do for you on the day?",
+            type: "textarea",
+          },
+          {
+            id: "thoughts_now",
+            label: "How are you feeling about the pregnancy and the birth coming up?",
+            type: "textarea",
+          },
+          {
+            id: "your_needs",
+            label: "What do you think you will need during labor and delivery?",
+            type: "textarea",
+          },
+          {
+            id: "birth_background",
+            label: "Have you been at a birth before, or is this your first?",
+            type: "textarea",
+          },
+          {
+            id: "serve_you_better",
+            label: "Anything else that would help us support you well?",
+            type: "textarea",
+          },
+          {
+            id: "questions",
+            label: "Questions you want answered before the day",
+            type: "textarea",
+          },
+          {
+            id: "partner_signature",
+            label: "Sign your name",
+            type: "text",
+          },
+        ],
+      },
+    },
+    {
+      // The 14-page Dubsado intake, cut to a worksheet a family can actually finish.
+      // Headings are the family's own words for their own answers — "Your health",
+      // "This pregnancy", "About birth" — not hospital intake vocabulary, and the
+      // "Birth Concierge" role name is gone. The closing line keeps Dubsado's one good
+      // idea: tell the family which forms are not hers, so she does not open empty
+      // staff work and think she is behind.
+      id: intakeWorksheetId,
+      organizationId: ORG_ID,
+      title: "Your birth plan worksheet",
+      kind: "intake",
+      audience: "family",
+      schemaJson: {
+        fields: [
+          {
+            id: "intro",
+            label:
+              "Help us know what matters for your pregnancy and birth. You will talk all of this through with Maya — nothing here is a final decision.",
+            type: "textarea",
+          },
+          { id: "due_date", label: "Estimated due date", type: "date" },
+          {
+            id: "birth_setting",
+            label: "Where are you planning to give birth — home, birth center, or hospital?",
+            type: "text",
+          },
+          {
+            id: "care_provider",
+            label: "Who is your primary care provider, and where do they practice?",
+            type: "text",
+          },
+          {
+            id: "first_baby",
+            label: "Is this your first baby? If not, who else is at home?",
+            type: "textarea",
+          },
+          {
+            id: "labor_care_plan",
+            label: "Who is looking after other children or pets while you are in labor?",
+            type: "textarea",
+          },
+          {
+            id: "classes",
+            label: "Any childbirth or feeding classes you have taken",
+            type: "textarea",
+          },
+          {
+            id: "your_health",
+            label: "Your health — anything ongoing we should know about",
+            type: "textarea",
+            sensitive: true,
+          },
+          {
+            id: "allergies",
+            label: "Allergies — medication, food, latex",
+            type: "textarea",
+            sensitive: true,
+          },
+          {
+            id: "this_pregnancy",
+            label: "This pregnancy — how it has gone so far",
+            type: "textarea",
+            sensitive: true,
+          },
+          {
+            id: "past_births",
+            label: "Births before this one, if any — what you want us to know",
+            type: "textarea",
+            sensitive: true,
+          },
+          {
+            id: "about_birth_vision",
+            label: "About birth — what is your vision for this one?",
+            type: "textarea",
+          },
+          {
+            id: "doula_expectations",
+            label: "What do you want from Maya on the day?",
+            type: "textarea",
+          },
+          {
+            id: "tension",
+            label: "Where do you hold tension, and how does it show?",
+            type: "textarea",
+          },
+          {
+            id: "comfort_self",
+            label: "How do you comfort yourself when something hurts or scares you?",
+            type: "textarea",
+          },
+          {
+            id: "pain_plan",
+            label: "Your plan for coping with the pain of labor",
+            type: "textarea",
+          },
+          {
+            id: "medication_response",
+            label: "If you ask for pain medication, how do you want Maya to respond?",
+            type: "textarea",
+          },
+          {
+            id: "cultural_preferences",
+            label: "Cultural or religious choices that matter for your birth",
+            type: "textarea",
+          },
+          {
+            id: "anything_else",
+            label: "Anything else that would help us support you",
+            type: "textarea",
+          },
+          {
+            id: "closing",
+            label:
+              "That is everything we need from you. Anything in your portal that starts with a doula's name is Maya's to fill in on a visit — please leave those for her. After you submit, changes go through Maya.",
+            type: "textarea",
+          },
+          { id: "signature", label: "Sign your name", type: "text" },
+        ],
+      },
+    },
+    {
+      // Staff. Dubsado already warned families to leave this one alone; the audience
+      // column means we never have to warn anybody, because she never sees it.
+      id: prenatalNotesId,
+      organizationId: ORG_ID,
+      title: "Prenatal visit notes",
+      kind: "visit",
+      audience: "staff",
+      schemaJson: {
+        fields: [
+          { id: "visit_date", label: "Date of the visit", type: "date" },
+          { id: "covered", label: "What you covered together", type: "textarea" },
+          { id: "follow_up", label: "What to pick up next time", type: "textarea" },
+        ],
+      },
+    },
+    {
+      // Staff. "Log the postpartum visit" is a doula's task, not a family's Incomplete.
+      id: postpartumVisitId,
+      organizationId: ORG_ID,
+      title: "Birth doula postpartum visit",
+      kind: "visit",
+      audience: "staff",
+      schemaJson: {
+        fields: [
+          { id: "birthing_person", label: "Birthing person", type: "text" },
+          { id: "baby_name", label: "Baby's name", type: "text" },
+          { id: "visit_date", label: "Date of the postpartum visit", type: "date" },
+          {
+            id: "wants_help_with",
+            label:
+              "What they want connecting with — lactation support, postpartum doula, PPMD specialist, something else",
+            type: "textarea",
+          },
+          {
+            id: "continuing_support",
+            label: "Anything else we should know to keep supporting them",
+            type: "textarea",
+          },
+        ],
+      },
+    },
+    {
+      // Staff. Senior package check-in timing is agency ops copy — it stays back here.
+      id: seniorCheckInId,
+      organizationId: ORG_ID,
+      title: "Senior birth team postpartum check-in",
+      kind: "visit",
+      audience: "staff",
+      schemaJson: {
+        fields: [
+          { id: "birthing_person", label: "Birthing person", type: "text" },
+          { id: "baby_name", label: "Baby's name", type: "text" },
+          { id: "check_in_date", label: "Date of the check-in", type: "date" },
+          { id: "support_package", label: "Support package on the engagement", type: "text" },
+          {
+            id: "wants_help_with",
+            label: "What they want connecting with",
+            type: "textarea",
+          },
+          {
+            id: "continuing_support",
+            label: "Anything else we should know to keep supporting them",
+            type: "textarea",
+          },
+        ],
+      },
+    },
+    {
+      // Staff, and it stays clinical. The Birth Log is the chart — dilation, timings,
+      // what was tried. It is not a family keepsake and it is not renamed into one: a
+      // birth story for the family is a different surface, written on purpose, not this
+      // grid with a friendlier label on it (TOK-50 / TOK-44).
+      id: birthLogId,
+      organizationId: ORG_ID,
+      title: "Birth log",
+      kind: "log",
+      audience: "staff",
+      schemaJson: {
+        fields: [
+          { id: "labor_start", label: "Labor start", type: "text" },
+          { id: "arrival", label: "Arrival at place of birth", type: "text" },
+          { id: "progress", label: "Progress and timings", type: "textarea" },
+          { id: "interventions", label: "Interventions and response", type: "textarea" },
+          { id: "birth_time", label: "Time of birth", type: "text" },
+          { id: "staff_notes", label: "Notes for the chart", type: "textarea" },
         ],
       },
     },
@@ -934,6 +1211,18 @@ async function main() {
       clientId: AVERY_CLIENT_ID,
       status: "incomplete",
       assigneeRole: "doula",
+    },
+    // TOK-50: the partner's own form, so the family portal demonstrates a second reader
+    // in the household. Every id above and below is a `family` template — the four staff
+    // templates are seeded into the library and assigned to nobody, because a staff form
+    // on a family's Incomplete list is the exact Dubsado bug this milestone refuses.
+    {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2",
+      organizationId: ORG_ID,
+      templateId: partnerExpectationsId,
+      clientId: CLIENT_ID,
+      status: "incomplete",
+      assigneeRole: "client",
     },
   ]);
 
@@ -1190,8 +1479,9 @@ ${roster}
   Import:   scripts/fixtures/nova-leads-sample.csv — 44 anonymized leads for /doula/clients/import
   Jordan:  fit consult booked with Maya, agreement sent, NOVA-1001 deposit open (TOK-41),
            engagement primary is Maya so every client surface names her (TOK-38)
-  Forms:   3 templates, 3 incomplete each for Jordan and Avery (TOK-27) — the postpartum one
-           carries sensitive questions and is marked "For a visit" for co-complete
+  Forms:   9 templates — 5 family, 4 staff (TOK-50). Jordan and Avery only ever hold the
+           family ones; the postpartum visit, senior check-in, prenatal notes and Birth
+           log are staff work and are assigned to nobody
   Library: 2 resources; the comfort checklist is read by Jordan and unread by Avery
   Chart:   one draft prenatal visit note for Jordan, staff_only, unsigned (TOK-44), and
            her signed birth preferences shared back to her portal (TOK-45) — /portal/passport

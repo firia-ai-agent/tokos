@@ -5,8 +5,10 @@ import {
   clientsEmpty,
   clientsHeading,
   clientsLegend,
+  homeCaseloadHint,
   homeClientsEmpty,
   homeCtaLabel,
+  openLeadNudge,
   navGroupLabel,
   shellNavGroups,
   shellNavItems,
@@ -176,5 +178,61 @@ describe("agency board summary (TOK-34 D7)", () => {
 
   it("says nothing about primaries when there are no families", () => {
     expect(agencyBoardSummary(0, 0)).toBe("No families in this practice yet");
+  });
+});
+
+
+/**
+ * TOK-49 soft fold, Priya's surfaces. Each of these is a string Vera read on screen while
+ * signed in as a solo doula, in an agency's vocabulary she has no use for.
+ */
+describe("doula home never speaks funnel (TOK-49 soft fold)", () => {
+  const priya = shellPersona(demoAccount("priya").membershipRole);
+
+  it("is the doula persona to begin with", () => {
+    expect(priya).toBe("doula");
+  });
+
+  it("never offers her 'Open pipeline'", () => {
+    expect(homeCtaLabel(priya)).toBe("Open clients");
+    expect(homeCtaLabel("agency")).toBe("Open pipeline");
+  });
+
+  it("counts her families rather than a funnel", () => {
+    expect(homeCaseloadHint(priya, { inCare: 0, openLeads: 1 })).toBe("1 family");
+    expect(homeCaseloadHint(priya, { inCare: 0, openLeads: 3 })).toBe("3 families");
+    expect(homeCaseloadHint(priya, { inCare: 0, openLeads: 0 })).toBe("No families yet");
+  });
+
+  it("leads with care for both personas, because care beats capture", () => {
+    expect(homeCaseloadHint(priya, { inCare: 1, openLeads: 4 })).toBe("1 in care");
+    expect(homeCaseloadHint("agency", { inCare: 2, openLeads: 4 })).toBe("2 in care");
+  });
+
+  it("keeps the funnel hint for the agency that has one", () => {
+    expect(homeCaseloadHint("agency", { inCare: 0, openLeads: 4 })).toBe("4 in funnel");
+  });
+
+  it("nudges her toward a person, not a stage", () => {
+    expect(openLeadNudge(priya).toLowerCase()).not.toContain("funnel");
+    expect(openLeadNudge("agency")).toBe("Keep the funnel moving");
+  });
+
+  it("says nothing about a funnel anywhere on her Home strings", () => {
+    const doulaCopy = [
+      homeCtaLabel(priya),
+      homeClientsEmpty(priya),
+      openLeadNudge(priya),
+      homeCaseloadHint(priya, { inCare: 0, openLeads: 2 }),
+      clientsHeading(priya),
+      clientsLegend(priya),
+      clientsEmpty(priya).title,
+      clientsEmpty(priya).body,
+      ...shellNewItems(priya).map((item) => item.label),
+    ].join(" | ").toLowerCase();
+
+    expect(doulaCopy).not.toContain("funnel");
+    expect(doulaCopy).not.toContain("pipeline");
+    expect(doulaCopy).not.toContain("new lead");
   });
 });

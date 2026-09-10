@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/tenancy";
 import { leadBoard, teamRoster } from "@/lib/queries";
-import { stageLabel, PIPELINE_STAGES, STAGE_LABELS } from "@/lib/pipeline";
+import { staffStageFilterLabel, staffStageLabel, staffStageOptions } from "@/lib/pipeline";
 import {
   eddMonthOptions,
   isFiltered,
@@ -157,11 +157,14 @@ export default async function ClientsPage({
             className="h-8 w-52 rounded-md border border-teal/20 bg-card px-2.5 text-[12.5px] text-teal-ink focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/25"
           />
         </label>
+        {/* The stage words are persona-aware (TOK-49 soft fold): an agency filters a
+            pipeline, a doula filters where a family's care stands. One map, in
+            `@/lib/pipeline` — never a hardcoded string list in a page. */}
         <FilterSelect
           name="stage"
-          label="Stage"
+          label={staffStageFilterLabel(persona)}
           value={query.stage}
-          options={PIPELINE_STAGES.map((stage) => ({ value: stage, label: STAGE_LABELS[stage] }))}
+          options={staffStageOptions(persona)}
         />
         <FilterSelect
           name="service"
@@ -301,7 +304,7 @@ export default async function ClientsPage({
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <Badge>{stageLabel(row.stage)}</Badge>
+                  <Badge>{staffStageLabel(persona, row.stage)}</Badge>
                   <span
                     className={cn(
                       "text-[12px] font-semibold",

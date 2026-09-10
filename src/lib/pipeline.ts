@@ -101,6 +101,51 @@ export function stageHint(stage: string): string {
 }
 
 /**
+ * Doula wording for the same canonical stages (TOK-49 soft fold).
+ *
+ * `STAGE_LABELS` is agency vocabulary and NOVA's owner should keep it — she really is
+ * working a pipeline. A solo doula is not: the person who booked a consult is a family
+ * from the first minute, and reading "New lead" over her own two clients was the whole
+ * of Vera's Priya complaint. Only the words that carry funnel voice are overridden; the
+ * rest of the lifecycle already reads as care and is shared, so the two maps cannot
+ * drift apart stage by stage.
+ */
+export const DOULA_STAGE_LABEL_OVERRIDES: Partial<Record<PipelineStageName, string>> = {
+  new_lead: "New family",
+  outreach_sent: "Intro sent",
+};
+
+export const DOULA_STAGE_LABELS: Record<PipelineStageName, string> = {
+  ...STAGE_LABELS,
+  ...DOULA_STAGE_LABEL_OVERRIDES,
+};
+
+/** Which staff persona is reading. Mirrors `ShellPersona` without importing the shell. */
+export type StaffPersona = "agency" | "doula";
+
+/**
+ * The one label function every `/doula/*` surface should call. Hardcoding either map in
+ * a page is what let "Open pipeline" and "New lead" survive on a doula's screen, so the
+ * pages pass their persona and this decides.
+ */
+export function staffStageLabel(persona: StaffPersona, stage: string): string {
+  const map = persona === "doula" ? DOULA_STAGE_LABELS : STAGE_LABELS;
+  return map[stage as PipelineStageName] ?? stageLabel(stage);
+}
+
+/** Persona-aware options for the board's stage filter, in lifecycle order. */
+export function staffStageOptions(
+  persona: StaffPersona,
+): Array<{ value: PipelineStageName; label: string }> {
+  return PIPELINE_STAGES.map((stage) => ({ value: stage, label: staffStageLabel(persona, stage) }));
+}
+
+/** Heading over that filter. "Stage" is board vocabulary; a doula gets the care word. */
+export function staffStageFilterLabel(persona: StaffPersona): string {
+  return persona === "doula" ? "Care stage" : "Stage";
+}
+
+/**
  * Stage values written before TOK-49. Kept as data rather than as branches in five
  * call sites, so the seed, a one-shot remap and any straggling row all agree.
  */

@@ -31,9 +31,12 @@ import { formatCents } from "@/lib/money";
 import {
   isOpenLeadStage,
   migrateStage,
+  staffStageLabel,
   stageLabel,
   type PipelineStageName,
 } from "@/lib/pipeline";
+import { homeCaseloadHint, openLeadNudge, type ShellPersona } from "@/lib/shell-persona";
+import { familyTemplates, staffTemplates } from "@/lib/form-audience";
 import {
   needsAttentionRows,
   type NeedsAttentionInput,
@@ -79,7 +82,16 @@ function canonicalStage(row: {
   return migrateStage(row.stage, { fitConfirmed: Boolean(row.fitConfirmedAt) });
 }
 
-export async function revenueHome(organizationId: string, doulaUserId: string) {
+/**
+ * Home for one staff member. `persona` only decides wording — an agency reads its funnel,
+ * a doula reads her families (TOK-49 soft fold) — never which rows come back, so the two
+ * personas cannot disagree about the numbers underneath.
+ */
+export async function revenueHome(
+  organizationId: string,
+  doulaUserId: string,
+  persona: ShellPersona = "agency",
+) {
   const db = getDb();
   const myClients = await db
     .select({
@@ -138,6 +150,8 @@ export async function revenueHome(organizationId: string, doulaUserId: string) {
   // stage strings that has to be found again every time the model grows (TOK-49).
   const leadOrFit = myClients.filter((row) => isOpenLeadStage(canonicalStage(row)));
 
+  // "N forms still open in the portal" must mean the family's own forms. A staff visit
+  // note is the doula's work, not a family's homework, so it never inflates this (TOK-50).
   const incompleteForms = clientIds.length
     ? await db
         .select({
@@ -145,10 +159,12 @@ export async function revenueHome(organizationId: string, doulaUserId: string) {
           n: count(),
         })
         .from(formAssignments)
+        .innerJoin(formTemplates, eq(formTemplates.id, formAssignments.templateId))
         .where(
           and(
             eq(formAssignments.organizationId, organizationId),
             eq(formAssignments.status, "incomplete"),
+            eq(formTemplates.audience, "family"),
             inArray(formAssignments.clientId, clientIds),
           ),
         )
@@ -213,10 +229,10 @@ export async function revenueHome(organizationId: string, doulaUserId: string) {
   for (const row of leadOrFit.slice(0, 4)) {
     attention.push({
       id: `stage-${row.client.id}`,
-      title: `${row.client.displayName} · ${stageLabel(canonicalStage(row))}`,
+      title: `${row.client.displayName} · ${staffStageLabel(persona, canonicalStage(row))}`,
       detail: row.client.edd
-        ? `EDD ${format(new Date(`${row.client.edd}T12:00:00`), "MMM d")} · keep the funnel moving`
-        : "Keep the funnel moving",
+        ? `EDD ${format(new Date(`${row.client.edd}T12:00:00`), "MMM d")} · ${openLeadNudge(persona).toLowerCase()}`
+        : openLeadNudge(persona),
       href: `/doula/clients/${row.client.id}`,
       cta: "Open",
     });
@@ -285,10 +301,10 @@ export async function revenueHome(organizationId: string, doulaUserId: string) {
     {
       label: "Active clients",
       value: String(myClients.length),
-      hint:
-        activeCare.length > 0
-          ? `${activeCare.length} in care`
-          : `${leadOrFit.length} in funnel`,
+      hint: homeCaseloadHint(persona, {
+        inCare: activeCare.length,
+        openLeads: leadOrFit.length,
+      }),
       tone: "teal",
     },
     {
@@ -313,14 +329,18 @@ export async function revenueHome(organizationId: string, doulaUserId: string) {
 
 export async function clientChecklist(organizationId: string, clientId: string) {
   const db = getDb();
+  // The family's checklist counts the family's forms. A staff template assigned against
+  // this client — a visit note, the Birth Log — is never a chore she owes (TOK-50).
   const [formsIncomplete] = await db
     .select({ n: count() })
     .from(formAssignments)
+    .innerJoin(formTemplates, eq(formTemplates.id, formAssignments.templateId))
     .where(
       and(
         eq(formAssignments.organizationId, organizationId),
         eq(formAssignments.clientId, clientId),
         eq(formAssignments.status, "incomplete"),
+        eq(formTemplates.audience, "family"),
       ),
     );
   const [openInvoices] = await db
@@ -500,9 +520,67 @@ export async function formsHub(organizationId: string) {
 
   return {
     templates,
+    // Split once here so no page has to remember the rule: only `family` may be offered
+    // a "Send to families" button, and staff templates still get a shelf of their own
+    // rather than disappearing from the library that owns them (TOK-50).
+    familyTemplates: familyTemplates(templates),
+    staffTemplates: staffTemplates(templates),
     assignments: assignmentsWithAnswers,
     openCount: rows.filter((row) => row.assignment.status === "incomplete").length,
     completeCount: rows.filter((row) => row.assignment.status === "complete").length,
+  };
+}
+
+/**
+ * What `/doula/clients/[id]` can still send this family: family-audience templates she
+ * has no open copy of, and handouts not already on her shelf. Sending from the record
+ * means the family is already chosen, so the page needs the candidates and nothing else
+ * (TOK-50 / CRM-FIRST §2A).
+ */
+export async function clientSendOptions(organizationId: string, clientId: string) {
+  const db = getDb();
+  const [templates, library, openAssignments, existingShares] = await Promise.all([
+    db
+      .select()
+      .from(formTemplates)
+      .where(eq(formTemplates.organizationId, organizationId))
+      .orderBy(asc(formTemplates.title)),
+    db
+      .select()
+      .from(resources)
+      .where(eq(resources.organizationId, organizationId))
+      .orderBy(asc(resources.title)),
+    db
+      .select({ templateId: formAssignments.templateId })
+      .from(formAssignments)
+      .where(
+        and(
+          eq(formAssignments.organizationId, organizationId),
+          eq(formAssignments.clientId, clientId),
+          eq(formAssignments.status, "incomplete"),
+        ),
+      ),
+    db
+      .select({ resourceId: resourceShares.resourceId })
+      .from(resourceShares)
+      .where(
+        and(
+          eq(resourceShares.organizationId, organizationId),
+          eq(resourceShares.clientId, clientId),
+        ),
+      ),
+  ]);
+
+  const openTemplateIds = new Set(openAssignments.map((row) => row.templateId));
+  const sharedResourceIds = new Set(existingShares.map((row) => row.resourceId));
+
+  return {
+    // Staff templates never reach this list — the family portal is the only destination
+    // this picker has.
+    formTemplates: familyTemplates(templates).filter(
+      (template) => !openTemplateIds.has(template.id),
+    ),
+    resources: library.filter((resource) => !sharedResourceIds.has(resource.id)),
   };
 }
 

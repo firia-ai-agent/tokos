@@ -72,3 +72,87 @@ describe("seeded roster (TOK-34 D8)", () => {
     }
   });
 });
+
+
+/**
+ * TOK-50. The seed is where the audience split becomes real: it is the only place that
+ * writes both kinds of template, and Jordan's portal is filled from the same file. A
+ * staff title reaching her Incomplete list is a Veri fail, so it is asserted against the
+ * seed source rather than left to a live walk to discover.
+ */
+describe("seeded form audiences (TOK-50)", () => {
+  /** `title` → `audience` for every template literal in the seed. */
+  function seededTemplates(): Array<{ title: string; audience: string }> {
+    return [...seed.matchAll(/title: "([^"]+)",\n\s+kind: "[^"]+",\n\s+audience: "(family|staff)"/g)].map(
+      (match) => ({ title: match[1]!, audience: match[2]! }),
+    );
+  }
+
+  /** The const names the assignment rows reference, e.g. `templateId: intakeId`. */
+  function assignedTemplateVars(): string[] {
+    const block = seed.slice(seed.indexOf("await db.insert(formAssignments)"));
+    return [...block.matchAll(/templateId: (\w+),/g)].map((match) => match[1]!);
+  }
+
+  it("marks every seeded template with an explicit audience", () => {
+    const templates = seededTemplates();
+    expect(templates.length).toBeGreaterThanOrEqual(9);
+    expect(templates.filter((t) => t.audience === "family").length).toBeGreaterThanOrEqual(5);
+    expect(templates.filter((t) => t.audience === "staff").length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("keeps the three original family forms family-facing", () => {
+    const family = seededTemplates()
+      .filter((t) => t.audience === "family")
+      .map((t) => t.title);
+    expect(family).toContain("Getting-to-know-you");
+    expect(family).toContain("Birth preferences");
+    expect(family).toContain("First two weeks at home");
+  });
+
+  it("adds the two TOK-50 family worksheets without the questionnaire chrome", () => {
+    const family = seededTemplates()
+      .filter((t) => t.audience === "family")
+      .map((t) => t.title);
+    expect(family).toContain("Birth partner expectations");
+    expect(family).toContain("Your birth plan worksheet");
+    for (const title of family) {
+      expect(title.toLowerCase()).not.toContain("questionnaire");
+      expect(title.toLowerCase()).not.toContain("assessment");
+      expect(title.toLowerCase()).not.toContain("doula's");
+    }
+  });
+
+  it("marks all four staff forms staff, Birth log included", () => {
+    const staff = seededTemplates()
+      .filter((t) => t.audience === "staff")
+      .map((t) => t.title);
+    expect(staff).toContain("Prenatal visit notes");
+    expect(staff).toContain("Birth doula postpartum visit");
+    expect(staff).toContain("Senior birth team postpartum check-in");
+    expect(staff).toContain("Birth log");
+  });
+
+  it("does not rename the Birth log into a family journal to fake a share", () => {
+    // The clinical grid stays clinical and stays staff-side. A family birth story, if we
+    // ever want one, is its own surface — not this one with a friendlier label.
+    expect(seed).not.toMatch(/title: "[^"]*journal[^"]*"/i);
+    expect(seed).not.toMatch(/title: "[^"]*birth story[^"]*"/i);
+  });
+
+  it("assigns only family templates to a client — never a staff one", () => {
+    const staffVars = ["prenatalNotesId", "postpartumVisitId", "seniorCheckInId", "birthLogId"];
+    const assigned = assignedTemplateVars();
+    expect(assigned.length).toBeGreaterThan(0);
+    for (const staffVar of staffVars) expect(assigned).not.toContain(staffVar);
+  });
+
+  it("drops the Birth Concierge role name and the EHR signature help", () => {
+    // Copy only: the comments above the templates are allowed to name what was cut.
+    for (const line of seedStrings()) {
+      expect(line).not.toContain("Birth Concierge");
+      expect(line.toLowerCase()).not.toContain("no longer editable");
+      expect(line.toLowerCase()).not.toContain("completing this record");
+    }
+  });
+});
