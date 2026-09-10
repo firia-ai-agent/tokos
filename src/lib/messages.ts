@@ -1,4 +1,4 @@
-import { format, isSameDay, subDays } from "date-fns";
+import { differenceInCalendarDays, format, isSameDay, subDays } from "date-fns";
 
 /**
  * Portal messaging is one thread per family, rendered from the same rows on both sides:
@@ -35,6 +35,20 @@ export function messageStamp(sentAt: Date, now: Date = new Date()): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
   return format(sentAt, "MMM d, yyyy");
+}
+
+/**
+ * The tighter stamp a conversation list wants (TOK-56). WhatsApp does not print "23 hrs
+ * ago" down the side of forty rows — it prints a time today, a weekday this week and a
+ * date beyond that, so the column stays one short word wide. The full stamp still rides
+ * along in the `title`.
+ */
+export function inboxStamp(sentAt: Date, now: Date = new Date()): string {
+  if (isSameDay(sentAt, now)) return format(sentAt, "h:mm a");
+  if (isSameDay(sentAt, subDays(now, 1))) return "Yesterday";
+  const days = differenceInCalendarDays(now, sentAt);
+  if (days > 1 && days < 7) return format(sentAt, "EEE");
+  return format(sentAt, "MMM d");
 }
 
 /** The unambiguous version, for the `title` on every stamp. */

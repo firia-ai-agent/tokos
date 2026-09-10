@@ -113,13 +113,26 @@ export function ThreadEmpty({
 /**
  * The composer sits against the bottom of the thread and sticks there while the
  * conversation scrolls, so replying never means scrolling back down.
+ *
+ * Two chromes, because the composer lives in two kinds of container. `card` is the
+ * free-standing sticky panel a long page needs; `bare` is for the split inbox, where the
+ * pane already draws the card and only the message list above it scrolls — a second
+ * ring and a second sticky context inside that would just be a box in a box.
  */
+export type ComposerChrome = "card" | "bare";
+
+const COMPOSER_CHROME: Record<ComposerChrome, string> = {
+  card: "sticky bottom-0 z-10 rounded-xl bg-card/95 p-3 ring-1 ring-teal/15 backdrop-blur supports-[backdrop-filter]:bg-card/80",
+  bare: "border-t border-teal/12 bg-card p-3",
+};
+
 export function MessageComposer({
   action,
   placeholder,
   submitLabel = "Send",
   hint,
   hiddenFields,
+  chrome = "card",
   className,
 }: {
   action: (formData: FormData) => void | Promise<void>;
@@ -127,15 +140,13 @@ export function MessageComposer({
   submitLabel?: string;
   hint?: string;
   hiddenFields?: Record<string, string>;
+  chrome?: ComposerChrome;
   className?: string;
 }) {
   return (
     <form
       action={action}
-      className={cn(
-        "sticky bottom-0 z-10 space-y-2 rounded-xl bg-card/95 p-3 ring-1 ring-teal/15 backdrop-blur supports-[backdrop-filter]:bg-card/80",
-        className,
-      )}
+      className={cn("space-y-2", COMPOSER_CHROME[chrome], className)}
     >
       {Object.entries(hiddenFields ?? {}).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />

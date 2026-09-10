@@ -377,6 +377,28 @@ export const portalMessages = pgTable("portal_messages", {
   readAt: timestamp("read_at", { withTimezone: true }),
 }, (table) => [index("portal_messages_client_idx").on(table.clientId, table.sentAt)]);
 
+/**
+ * Pinned conversations in the staff inbox (TOK-56).
+ *
+ * A pin is personal, the way it is in WhatsApp: Maya pinning the family she is on call
+ * for tonight should not reorder Priya's inbox. Hence the row is scoped to
+ * (organization, user, client) with a unique index — pinning twice is idempotent, and
+ * unpinning is a delete rather than a nullable flag nobody would ever clear.
+ *
+ * Deliberately its own table instead of a column on `portal_messages`: the pin belongs to
+ * the thread, and the thread is the family, not any one message.
+ */
+export const portalThreadPins = pgTable("portal_thread_pins", {
+  id: uuid("id").primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  clientId: uuid("client_id").notNull().references(() => clients.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  pinnedAt: timestamp("pinned_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("portal_thread_pins_user_client_idx").on(table.userId, table.clientId),
+  index("portal_thread_pins_org_idx").on(table.organizationId, table.userId),
+]);
+
 export const emailTemplates = pgTable("email_templates", {
   id: uuid("id").primaryKey(),
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),

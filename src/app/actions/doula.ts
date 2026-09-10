@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
-import { calendarEvents, portalMessages, providerProfiles } from "@/db/schema";
+import {
+  calendarEvents,
+  portalMessages,
+  portalThreadPins,
+  providerProfiles,
+} from "@/db/schema";
 import {
   confirmFit,
   logClientContact,
@@ -121,6 +126,52 @@ export async function markClientMessagesReadAction(clientId: string) {
     );
   revalidatePath("/doula/messages");
   revalidatePath(`/doula/clients/${client.id}`);
+}
+
+/**
+ * Pin or unpin a family's thread in this staffer's inbox (TOK-56).
+ *
+ * The pin is personal — WhatsApp does not reorder your colleague's chats — so the row is
+ * keyed on (user, client) and `requireStaffClient` proves the family is in this staffer's
+ * org before anything is written. Unpinning deletes rather than nulls a flag: a pin that
+ * is not there is the whole state.
+ *
+ * Idempotent in both directions, because the button posts what it *saw*: a double submit
+ * from a slow network lands on the same result instead of toggling twice.
+ */
+export async function toggleThreadPinAction(formData: FormData) {
+  const clientId = String(formData.get("clientId") ?? "");
+  if (!clientId) return;
+  // `pinned` is the state the row was rendered in; the click asks for the opposite.
+  const wasPinned = String(formData.get("pinned") ?? "") === "true";
+  const { staff, client } = await requireStaffClient(clientId);
+  const db = getDb();
+
+  if (wasPinned) {
+    await db
+      .delete(portalThreadPins)
+      .where(
+        and(
+          eq(portalThreadPins.organizationId, staff.organizationId),
+          eq(portalThreadPins.userId, staff.userId),
+          eq(portalThreadPins.clientId, client.id),
+        ),
+      );
+  } else {
+    await db
+      .insert(portalThreadPins)
+      .values({
+        id: newId(),
+        organizationId: staff.organizationId,
+        clientId: client.id,
+        userId: staff.userId,
+      })
+      .onConflictDoNothing({
+        target: [portalThreadPins.userId, portalThreadPins.clientId],
+      });
+  }
+
+  revalidatePath("/doula/messages");
 }
 
 export async function saveAvailabilityAction(formData: FormData) {

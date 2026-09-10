@@ -1,8 +1,10 @@
+import { format } from "date-fns";
 import { describe, expect, it } from "vitest";
 import {
   chronological,
   dayLabel,
   groupByDay,
+  inboxStamp,
   isOwnMessage,
   messageStamp,
   previewLine,
@@ -162,5 +164,27 @@ describe("previewLine", () => {
   it("truncates with an ellipsis past the limit", () => {
     expect(previewLine("abcdefghij", 5)).toBe("abcd…");
     expect(previewLine("abcde", 5)).toBe("abcde");
+  });
+});
+
+describe("inbox stamp (TOK-56)", () => {
+  it("prints a clock time for today", () => {
+    const sent = at("2026-09-08T14:05:00.000Z");
+    expect(inboxStamp(sent, NOW)).toBe(format(sent, "h:mm a"));
+  });
+
+  it("says Yesterday rather than a weekday", () => {
+    expect(inboxStamp(at("2026-09-07T09:00:00.000Z"), NOW)).toBe("Yesterday");
+  });
+
+  it("uses the weekday inside the last week", () => {
+    const sent = at("2026-09-04T09:00:00.000Z");
+    expect(inboxStamp(sent, NOW)).toBe(format(sent, "EEE"));
+    expect(inboxStamp(sent, NOW)).toHaveLength(3);
+  });
+
+  it("falls back to a date beyond a week", () => {
+    const sent = at("2026-08-20T09:00:00.000Z");
+    expect(inboxStamp(sent, NOW)).toBe(format(sent, "MMM d"));
   });
 });

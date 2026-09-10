@@ -17,6 +17,7 @@ import {
   resolveCareTeamCard,
 } from "@/lib/care-team";
 import { checklistCards, openTaskCount } from "@/lib/checklist";
+import { portalMessageAffordance, portalUnreadBadge } from "@/lib/message-inbox";
 import { waitingQueueLink } from "@/lib/home-queues";
 import { HomeHeader } from "@/components/brand/home-header";
 import { ProviderAvatar } from "@/components/brand/avatar";
@@ -77,6 +78,9 @@ export default async function PortalHomePage({
     facts.push({ label: locationFieldLabel(care.location.source), value: care.location.label });
   }
 
+  // The one way to reach her, addressed from config so Home and the thread never drift.
+  const messageDoula = portalMessageAffordance(doula.name);
+
   const banners = portalBanners(query, doula.firstName);
 
   const onCall = formatPhoneNumber(org?.onCallPhone);
@@ -117,16 +121,32 @@ export default async function PortalHomePage({
                 Your care team
               </p>
               {/* The name and the way to reach her, together. Reading who your doula is
-                  and then hunting the nav for Messages was the gap (TOK-52 → TOK-56). */}
+                  and then hunting the nav for Messages was the gap (TOK-52 → TOK-56). The
+                  button turns terracotta while she is waiting on you, so the affordance
+                  doubles as the unread glance instead of needing a second tile. */}
               <p className="mt-1 flex flex-wrap items-center gap-2 font-heading text-[21px] font-semibold tracking-[-0.01em] text-teal-ink">
                 {doula.name}
                 <Link
-                  href="/portal/messages"
-                  aria-label={`Message ${doula.name}`}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-cloud px-2.5 py-1 font-sans text-[12.5px] font-semibold text-teal ring-1 ring-teal/20 transition hover:ring-teal/45"
+                  href={messageDoula.href}
+                  aria-label={
+                    checklist.unreadMessages > 0
+                      ? `${messageDoula.ariaLabel} — ${portalUnreadBadge(checklist.unreadMessages)}`
+                      : messageDoula.ariaLabel
+                  }
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-sans text-[12.5px] font-semibold ring-1 transition",
+                    checklist.unreadMessages > 0
+                      ? "bg-coral/12 text-coral ring-coral/30 hover:ring-coral/55"
+                      : "bg-cloud text-teal ring-teal/20 hover:ring-teal/45",
+                  )}
                 >
                   <MessageCircle aria-hidden className="size-4" />
-                  Message
+                  {messageDoula.label}
+                  {checklist.unreadMessages > 0 ? (
+                    <span className="rounded-full bg-coral px-1.5 text-[11px] font-semibold tabular-nums text-cloud">
+                      {checklist.unreadMessages}
+                    </span>
+                  ) : null}
                 </Link>
               </p>
               <p className="mt-0.5 text-[13px] text-muted-foreground">

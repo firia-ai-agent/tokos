@@ -35,6 +35,14 @@ import { StageSelect } from "@/components/brand/stage-select";
 import { StageStepper } from "@/components/brand/stage-stepper";
 import { LeadFieldsForm, LeadNotesFeed, LeadSummary } from "@/components/brand/lead-fields";
 import { unreadFor } from "@/lib/messages";
+import {
+  COMPOSER_COPY,
+  messagesHref,
+  staffThreadCardHint,
+  staffThreadCardTitle,
+  staffThreadEmpty,
+  unreadBadgeCopy,
+} from "@/lib/message-inbox";
 import { formatCents } from "@/lib/money";
 import {
   confirmFitAction,
@@ -200,6 +208,8 @@ export default async function ClientDetailPage({
   // below carry no family dropdown at all (TOK-50 / CRM-FIRST §2A).
   const sendable = await clientSendOptions(staff.organizationId, client.id);
   const familyName = client.preferredName ?? client.displayName;
+  // One empty state for this family, shared with the inbox pane (TOK-56).
+  const threadEmpty = staffThreadEmpty(familyName);
 
   return (
     <div className="space-y-6">
@@ -643,12 +653,31 @@ export default async function ClientDetailPage({
 
       <Card id="portal-messages" className="scroll-mt-24">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle>Portal messages</CardTitle>
-          {unreadFromClient > 0 ? (
-            <Badge variant="secondary" className="bg-coral/12 text-coral">
-              {unreadFromClient} unread
-            </Badge>
-          ) : null}
+          {/* A conversation, named after the person in it (TOK-56, Vera). "Portal
+              messages" is the table's name for these rows, not this card's — a doula
+              reading Jordan's file is looking at her thread with Jordan. */}
+          <div className="min-w-0">
+            <CardTitle>{staffThreadCardTitle(familyName)}</CardTitle>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+              {staffThreadCardHint(familyName)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {unreadFromClient > 0 ? (
+              <Badge variant="secondary" className="bg-coral/12 text-coral">
+                {unreadBadgeCopy(unreadFromClient)}
+              </Badge>
+            ) : null}
+            {/* The record and the inbox are the same conversation; this is the door
+                between them, so a doula reading a file can carry on in the inbox
+                without losing the list (TOK-56). */}
+            <Link
+              href={messagesHref({ clientId: client.id })}
+              className="rounded-lg bg-cloud px-2.5 py-1.5 text-[12.5px] font-semibold text-teal ring-1 ring-teal/20 transition hover:ring-teal/45"
+            >
+              Open in Messages
+            </Link>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Same thread the family sees at /portal/messages, mirrored. Opening the record
@@ -660,15 +689,16 @@ export default async function ClientDetailPage({
           <MessageThread
             messages={messages}
             viewer="doula"
-            theirName={client.preferredName ?? client.displayName}
-            emptyTitle="No messages yet"
-            emptyBody={`Nothing from ${client.preferredName ?? client.displayName} yet. Write the first note and it lands in their portal.`}
+            theirName={familyName}
+            emptyTitle={threadEmpty.title}
+            emptyBody={threadEmpty.body}
           />
           <MessageComposer
             action={sendClientMessageAction}
             hiddenFields={{ clientId: client.id }}
-            placeholder="Write to this family…"
-            hint="Lands in their portal. No SMS in this milestone."
+            placeholder={COMPOSER_COPY.staff.placeholder(familyName)}
+            hint={COMPOSER_COPY.staff.hint(familyName)}
+            submitLabel={COMPOSER_COPY.staff.submitLabel}
           />
         </CardContent>
       </Card>
