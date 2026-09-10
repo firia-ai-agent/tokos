@@ -15,6 +15,8 @@ const clientCalendar = read("app", "(client)", "portal", "calendar", "page.tsx")
 const doulaCalendar = read("app", "(doula)", "doula", "calendar", "page.tsx");
 const publicBook = read("app", "(public)", "p", "[slug]", "book", "page.tsx");
 const slotPicker = read("components", "brand", "slot-picker.tsx");
+const visitsAlias = read("app", "(client)", "portal", "visits", "page.tsx");
+const clientLayout = read("app", "(client)", "portal", "layout.tsx");
 
 describe("client /portal/calendar (TOK-33 C1–C7, C14)", () => {
   it("titles the page with the person the family is seeing (C6)", () => {
@@ -148,5 +150,16 @@ describe("client-facing calendar copy never falls back to a role", () => {
 
   it("keeps internal triage words off the family's screen (C14)", () => {
     expect(clientCalendar).not.toMatch(/fit consult|fit window/i);
+  });
+});
+
+describe("/portal/visits alias (TOK-54)", () => {
+  it("sends the URL families type to the calendar, permanently", () => {
+    expect(visitsAlias).toContain('permanentRedirect("/portal/calendar")');
+  });
+
+  it("leaves the Visits nav pointing at the calendar itself, not the alias", () => {
+    expect(clientLayout).toContain('{ href: "/portal/calendar", label: "Visits" }');
+    expect(clientLayout).not.toContain('"/portal/visits"');
   });
 });
