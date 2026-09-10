@@ -15,7 +15,7 @@ import {
   windowsByWeekday,
   type MinuteRange,
   type WeekWindow,
-} from "@/lib/calendar";
+} from "@/lib/availability-windows";
 import {
   SCHEDULE_STEP_MINUTES,
   blockPlacement,
@@ -24,7 +24,7 @@ import {
   paintedRange,
   scheduleBounds,
   scheduleHourTicks,
-} from "@/lib/calendar-grid";
+} from "@/lib/schedule-paint";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
