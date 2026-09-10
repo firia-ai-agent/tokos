@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkoutBindingError,
+  checkoutPaymentTruth,
   isPaymentCleared,
   paymentOutcomeStatuses,
 } from "./payment";
@@ -84,5 +85,72 @@ describe("payment status honesty (TOK-17)", () => {
   it("keeps due/open invoices uncleared", () => {
     expect(isPaymentCleared({ paymentStatus: "due", invoiceStatus: "open" })).toBe(false);
     expect(isPaymentCleared({ paymentStatus: "due" })).toBe(false);
+  });
+});
+
+describe("stripe session truth (TOK-48)", () => {
+  const invoice = {
+    id: "77777777-7777-4777-8777-777777777771",
+    organizationId: "11111111-1111-4111-8111-111111111111",
+    amountCents: 120000,
+    currency: "usd",
+  };
+  const bound = {
+    metadata: { invoice_id: invoice.id, organization_id: invoice.organizationId },
+    amountTotalCents: invoice.amountCents,
+    currency: "usd",
+  };
+
+  it("calls only a literally paid session paid", () => {
+    expect(checkoutPaymentTruth({ paymentStatus: "paid", status: "complete" })).toBe("paid");
+    expect(checkoutPaymentTruth({ paymentStatus: "PAID", status: "complete" })).toBe("paid");
+  });
+
+  it("reads a complete session with money still in flight as pending, never paid", () => {
+    expect(checkoutPaymentTruth({ paymentStatus: "unpaid", status: "complete" })).toBe("pending");
+    expect(checkoutPaymentTruth({ paymentStatus: "unpaid", status: "complete" })).not.toBe("paid");
+  });
+
+  it("reads an open or expired session as unpaid", () => {
+    expect(checkoutPaymentTruth({ paymentStatus: "unpaid", status: "open" })).toBe("unpaid");
+    expect(checkoutPaymentTruth({ paymentStatus: "unpaid", status: "expired" })).toBe("unpaid");
+  });
+
+  it("never invents payment from a status it does not know", () => {
+    expect(checkoutPaymentTruth({ paymentStatus: "no_payment_required" })).toBe("unpaid");
+    expect(checkoutPaymentTruth({ paymentStatus: "weird_new_code" })).toBe("unpaid");
+    expect(checkoutPaymentTruth({})).toBe("unpaid");
+  });
+
+  it("lets payment_status overrule a stale paid boolean", () => {
+    expect(checkoutPaymentTruth({ paid: true, paymentStatus: "unpaid", status: "open" })).toBe(
+      "unpaid",
+    );
+    expect(checkoutPaymentTruth({ paid: false, paymentStatus: "paid" })).toBe("paid");
+  });
+
+  it("still honours the stub adapter boolean when Stripe said nothing", () => {
+    expect(checkoutPaymentTruth({ paid: true })).toBe("paid");
+    expect(checkoutPaymentTruth({ paid: false })).toBe("unpaid");
+  });
+
+  it("binds a pending session as pending, and never settles it", () => {
+    expect(
+      checkoutBindingError({ ...bound, paymentStatus: "unpaid", status: "complete" }, invoice),
+    ).toBe("pending");
+    expect(
+      checkoutBindingError({ ...bound, paymentStatus: "unpaid", status: "expired" }, invoice),
+    ).toBe("unpaid");
+    expect(checkoutBindingError({ ...bound, paymentStatus: "paid" }, invoice)).toBeNull();
+  });
+
+  it("checks binding before pending, so a stray in-flight session says nothing here", () => {
+    const stray = { metadata: {}, paymentStatus: "unpaid", status: "complete" };
+    expect(checkoutBindingError(stray, invoice)).toBe("mismatch");
+  });
+
+  it("keeps a payment still clearing out of cleared", () => {
+    expect(isPaymentCleared({ paymentStatus: "pending", invoiceStatus: "pending" })).toBe(false);
+    expect(isPaymentCleared({ paymentStatus: "pending", invoiceStatus: "paid" })).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { invoices } from "@/db/schema";
 import { requireStaff } from "@/lib/tenancy";
 import { formatCents } from "@/lib/money";
+import { isPaymentCleared } from "@/lib/payment";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/brand/states";
 
@@ -24,7 +25,11 @@ export default async function InvoicesPage() {
   }
 
   const open = rows.filter((row) => row.status === "open").reduce((sum, row) => sum + row.amountCents, 0);
-  const paid = rows.filter((row) => row.status === "paid").reduce((sum, row) => sum + row.amountCents, 0);
+  // Staff keep the raw codes below, but the money line is money: only cleared invoices
+  // count toward Paid, so a refunded or failed one never inflates the total (TOK-48).
+  const paid = rows
+    .filter((row) => isPaymentCleared({ invoiceStatus: row.status }))
+    .reduce((sum, row) => sum + row.amountCents, 0);
 
   return (
     <div className="space-y-4">
@@ -39,7 +44,7 @@ export default async function InvoicesPage() {
               <p className="font-medium">{invoice.number}</p>
               <p className="text-sm text-muted-foreground">{formatCents(invoice.amountCents)}</p>
             </div>
-            <Badge variant={invoice.status === "paid" ? "default" : "secondary"}>
+            <Badge variant={isPaymentCleared({ invoiceStatus: invoice.status }) ? "default" : "secondary"}>
               {invoice.status}
             </Badge>
           </div>

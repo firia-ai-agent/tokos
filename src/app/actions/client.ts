@@ -18,6 +18,7 @@ import { SlotUnavailableError, type SlotRejection } from "@/lib/calendar";
 import { readAnswers } from "@/lib/forms";
 import { beginCheckout, bookConsult, markAgreementSigned } from "@/lib/funnel";
 import { newId } from "@/lib/ids";
+import { isPaymentCleared } from "@/lib/payment";
 import { clientAgreementStatuses } from "@/lib/queries";
 import { resourcesUnlocked } from "@/lib/resource-gate";
 import { requireClient } from "@/lib/tenancy";
@@ -54,6 +55,9 @@ export async function payInvoiceAction(invoiceId: string) {
     )
     .limit(1);
   if (!invoice) throw new Error("Forbidden");
+  // A settled invoice has no Pay button, so reaching here means a stale tab or a
+  // hand-rolled POST. Opening Checkout anyway would charge a family twice (TOK-48).
+  if (isPaymentCleared({ invoiceStatus: invoice.status })) redirect("/portal/pay");
   const checkout = await beginCheckout({
     organizationId: session.organizationId,
     invoiceId,

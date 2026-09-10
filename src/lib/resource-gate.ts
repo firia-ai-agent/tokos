@@ -16,11 +16,10 @@
  * POST cannot walk past a gate the page drew.
  */
 
+import { isPaymentCleared } from "@/lib/payment";
+
 /** A contract counts as signed once the family has put their name on it. */
 const SIGNED_CONTRACT = new Set(["signed", "complete"]);
-
-/** Only a cleared invoice counts. `open` is a bill, not a payment. */
-const PAID_INVOICE = "paid";
 
 export type ResourceGateInput = {
   /** Every contract status this family has, in any order. */
@@ -50,8 +49,13 @@ export function hasSignedContract(statuses: readonly string[]): boolean {
   return statuses.some((status) => SIGNED_CONTRACT.has(status));
 }
 
+/**
+ * Only a cleared invoice counts. `open` is a bill, not a payment, and `failed` is the
+ * absence of one — `isPaymentCleared` is the same predicate the funnel and the pay page
+ * use, so the shelf can never open on money the portal calls Due (TOK-48).
+ */
 export function hasClearedPayment(statuses: readonly string[]): boolean {
-  return statuses.some((status) => status === PAID_INVOICE);
+  return statuses.some((status) => isPaymentCleared({ invoiceStatus: status }));
 }
 
 /** The predicate. Both halves, or the shelf stays shut. */

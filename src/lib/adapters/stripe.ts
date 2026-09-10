@@ -57,11 +57,20 @@ export async function createCheckoutSession(input: {
   };
 }
 
+/**
+ * The session as Stripe reports it. `payment_status` and `status` are carried through
+ * verbatim (TOK-48) rather than flattened to a boolean here: `paid` cannot tell a
+ * declined card apart from a bank debit still clearing, and those owe the family two
+ * different sentences. `checkoutPaymentTruth` does the reducing, in one place.
+ */
 export async function retrieveCheckoutSession(sessionId: string) {
   if (!hasStripe()) {
     const failed = /fail|cancel/i.test(sessionId);
     return {
       paid: !failed,
+      paymentStatus: failed ? "unpaid" : "paid",
+      // Not `complete`, or the stub's fail path would read as a payment in flight.
+      status: failed ? "expired" : "complete",
       metadata: {} as Record<string, string>,
       amountTotalCents: null as number | null,
       currency: null as string | null,
@@ -70,6 +79,8 @@ export async function retrieveCheckoutSession(sessionId: string) {
   const session = await client().checkout.sessions.retrieve(sessionId);
   return {
     paid: session.payment_status === "paid",
+    paymentStatus: session.payment_status as string | null,
+    status: session.status as string | null,
     metadata: (session.metadata ?? {}) as Record<string, string>,
     amountTotalCents: session.amount_total,
     currency: session.currency,

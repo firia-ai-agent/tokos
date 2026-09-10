@@ -12,6 +12,10 @@ import { checkoutBindingError } from "@/lib/payment";
  * Stripe Checkout return. Bare `?invoiceId=` never marks paid, and a `session_id` only
  * settles the invoice its own metadata names, for that amount and currency (TOK-21).
  * Demo stub pay completes only from the authenticated /stub/pay form.
+ *
+ * Only a session Stripe calls `paid` marks the invoice paid (TOK-48). A delayed method
+ * still clearing sends the family back with pending copy — the invoice stays open, so
+ * the money is never announced before it lands.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -47,6 +51,9 @@ export async function GET(request: Request) {
   const binding = checkoutBindingError(checkout, invoice);
   if (binding === "mismatch") {
     return Response.redirect(new URL("/portal/pay?unpaid=1&result=unverified", request.url));
+  }
+  if (binding === "pending") {
+    return Response.redirect(new URL("/portal/pay?pending=1", request.url));
   }
   if (binding === "unpaid") {
     return Response.redirect(new URL("/portal/pay?unpaid=1", request.url));
