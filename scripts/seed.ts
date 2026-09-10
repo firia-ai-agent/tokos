@@ -811,18 +811,25 @@ async function main() {
     },
   ]);
 
+  // Every published provider page needs open windows, not just the first one (TOK-71).
+  // Availability was seeded for Maya alone while two doulas had public `/p/<slug>/book`
+  // pages, so Priya's answered 200 and then said "No open windows this fortnight" — a
+  // dead end that looks like a working page. Windows follow the profile, one per doula.
   const weekdays = [1, 2, 3, 4, 5];
-  await db.insert(availability).values(
+  const weekdayWindows = (userId: string, idMark: string) =>
     weekdays.map((weekday, index) => ({
-      id: `bbbbbbb${index}-bbbb-4bbb-8bbb-bbbbbbbbbbb${index}`,
+      id: `bbbbbb${idMark}${index}-bbbb-4bbb-8bbb-bbbbbbbbbb${idMark}${index}`,
       organizationId: ORG_ID,
-      userId: DOULA_ID,
+      userId,
       weekday,
       startMinutes: 10 * 60,
       endMinutes: 16 * 60,
       timezone: "America/New_York",
-    })),
-  );
+    }));
+  await db.insert(availability).values([
+    ...weekdayWindows(DOULA_ID, "b"),
+    ...weekdayWindows(PRIYA_USER_ID, "c"),
+  ]);
 
   const intakeId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
   const preferencesId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
