@@ -46,34 +46,39 @@ function NotifyRow({ item }: { item: ShellNotifyItem }) {
       <Link
         href={item.href}
         className={cn(
-          "block w-full rounded-md border-l-[3px] px-2.5 py-1.5 transition-colors hover:bg-cloud focus:bg-cloud",
+          "w-full rounded-md border-l-[3px] px-2.5 py-1.5 transition-colors hover:bg-cloud focus:bg-cloud",
           item.urgent ? "border-l-coral" : "border-l-teal/25",
         )}
       >
-        <span className="block truncate text-[13.5px] font-semibold leading-tight text-teal-ink!">
-          {item.title}
-        </span>
-        <span className="mt-0.5 block space-y-px">
-          {shown.map((issue) => (
-            <span key={issue.key} className="block truncate text-[11.5px] leading-[1.35]">
-              <span
-                className={cn(
-                  "font-semibold",
-                  issue.urgent ? "text-coral!" : "text-teal-ink/70!",
-                )}
-              >
-                {issue.label}
+        {/* `asChild` concatenates the menu item's own `flex items-center` onto the link
+            rather than merging it away, so the stack is built one level in where nothing
+            competes with it. */}
+        <span className="flex min-w-0 flex-1 flex-col items-start">
+          <span className="w-full truncate text-[13.5px] font-semibold leading-tight text-teal-ink!">
+            {item.title}
+          </span>
+          <span className="mt-0.5 w-full">
+            {shown.map((issue) => (
+              <span key={issue.key} className="block truncate text-[11.5px] leading-[1.4]">
+                <span
+                  className={cn(
+                    "font-semibold",
+                    issue.urgent ? "text-coral!" : "text-teal-ink/70!",
+                  )}
+                >
+                  {issue.label}
+                </span>
+                {issue.detail ? (
+                  <span className="text-muted-foreground!"> · {issue.detail}</span>
+                ) : null}
               </span>
-              {issue.detail ? (
-                <span className="text-muted-foreground!"> · {issue.detail}</span>
-              ) : null}
-            </span>
-          ))}
-          {hidden > 0 ? (
-            <span className="block text-[11px] leading-[1.35] text-muted-foreground!">
-              +{hidden} more on her record
-            </span>
-          ) : null}
+            ))}
+            {hidden > 0 ? (
+              <span className="block text-[11px] leading-[1.4] text-muted-foreground!">
+                +{hidden} more on her record
+              </span>
+            ) : null}
+          </span>
         </span>
       </Link>
     </DropdownMenuItem>
