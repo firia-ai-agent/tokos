@@ -7,6 +7,7 @@ import {
   reviewQueueLink,
   reviewQueueSummary,
   reviewTaskCount,
+  shellNotifyItems,
   waitingBoard,
   waitingQueueLink,
 } from "./home-queues";
@@ -215,5 +216,73 @@ describe("waiting board", () => {
       )
       .join(" ");
     expect(text).not.toMatch(/\blead\b|pipeline|funnel|\bstage\b|intake|prospect/i);
+  });
+});
+
+
+/* -------------------------------------------------------------------- TOK-53 */
+
+describe("the bell", () => {
+  const jordan: NeedsAttentionInput = {
+    clientId: "jordan",
+    name: "Jordan Rivera",
+    stage: "fit_confirmed",
+    followUpDueOn: null,
+    reviewed: true,
+    hasPrimaryDoula: true,
+    unsignedAgreementCents: 280000,
+    openInvoiceCents: 90000,
+  };
+  const avery: NeedsAttentionInput = {
+    clientId: "avery",
+    name: "Avery Kim",
+    stage: "outreach_sent",
+    followUpDueOn: null,
+    reviewed: true,
+    hasPrimaryDoula: true,
+  };
+
+  const items = shellNotifyItems(needsAttentionRows([jordan, avery], TODAY));
+
+  it("gives each family one row, and puts her name in it once", () => {
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.title)).toEqual(["Jordan Rivera", "Avery Kim"]);
+    expect(items.map((item) => item.id)).toEqual(["jordan", "avery"]);
+  });
+
+  it("lists the issues under the name rather than splitting them into rows", () => {
+    expect(items[0].issues.map((issue) => issue.label)).toEqual([
+      "Agreement waiting",
+      "Open invoice",
+    ]);
+    expect(items[0].detail).toBe("Agreement waiting · Open invoice");
+    expect(items[0].issues[0].detail).toBe("$2,800.00 · not signed");
+  });
+
+  it("opens the family, at the section that clears her worst issue", () => {
+    expect(items[0].href).toBe("/doula/clients/jordan#money");
+    expect(items[1].href).toBe("/doula/clients/avery#lead-details");
+  });
+
+  it("marks money terracotta and a nudge calm", () => {
+    expect(items[0].urgent).toBe(true);
+    expect(items[1].urgent).toBe(false);
+  });
+
+  it("does not word anything of its own — every label comes from the rules", () => {
+    const board = reviewBoard(needsAttentionRows([jordan], TODAY));
+    expect(items[0].issues.map((issue) => issue.label)).toEqual(
+      board[0].tasks.map((task) => task.label),
+    );
+  });
+
+  it("keeps the popover short", () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      ...avery,
+      clientId: `c${i}`,
+      name: `Family ${i}`,
+    }));
+    expect(shellNotifyItems(needsAttentionRows(many, TODAY))).toHaveLength(5);
+    expect(shellNotifyItems(needsAttentionRows(many, TODAY), 3)).toHaveLength(3);
   });
 });

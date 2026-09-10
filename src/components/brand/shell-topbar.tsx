@@ -12,17 +12,73 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { REVIEW_BOARD_HREF, type ShellNotifyItem } from "@/lib/home-queues";
 import { cn } from "@/lib/utils";
 
-export type ShellNotifyItem = {
-  id: string;
-  title: string;
-  detail?: string;
-  href: string;
-};
+/**
+ * The bell's rows are built by the rules, not here (TOK-53) — one per family, with her
+ * issues attached. Re-exported so the shell keeps importing the shape from the component
+ * that draws it.
+ */
+export type { ShellNotifyItem } from "@/lib/home-queues";
 
 /** One entry in the staff "New" menu. Built per persona in `@/lib/shell-persona`. */
 export type ShellNewItem = { label: string; href: string };
+
+/** Up to three issues under the name; the rest are counted rather than listed. */
+const VISIBLE_ISSUES = 3;
+
+/**
+ * One family in the bell.
+ *
+ * The name carries the row and the issues sit under it in small type, terracotta where
+ * money or a missed date is involved — the same urgency language the pipeline board and
+ * Home already speak, so a founder reads one vocabulary across three surfaces. Focus is
+ * the Cloud inset rather than the coral fill the menu primitive defaults to: a whole
+ * three-line row painted accent is a shout, not a hover.
+ */
+function NotifyRow({ item }: { item: ShellNotifyItem }) {
+  const shown = item.issues.slice(0, VISIBLE_ISSUES);
+  const hidden = item.issues.length - shown.length;
+
+  return (
+    <DropdownMenuItem asChild className="p-0 focus:bg-transparent">
+      <Link
+        href={item.href}
+        className={cn(
+          "block w-full rounded-md border-l-[3px] px-2.5 py-1.5 transition-colors hover:bg-cloud focus:bg-cloud",
+          item.urgent ? "border-l-coral" : "border-l-teal/25",
+        )}
+      >
+        <span className="block truncate text-[13.5px] font-semibold leading-tight text-teal-ink!">
+          {item.title}
+        </span>
+        <span className="mt-0.5 block space-y-px">
+          {shown.map((issue) => (
+            <span key={issue.key} className="block truncate text-[11.5px] leading-[1.35]">
+              <span
+                className={cn(
+                  "font-semibold",
+                  issue.urgent ? "text-coral!" : "text-teal-ink/70!",
+                )}
+              >
+                {issue.label}
+              </span>
+              {issue.detail ? (
+                <span className="text-muted-foreground!"> · {issue.detail}</span>
+              ) : null}
+            </span>
+          ))}
+          {hidden > 0 ? (
+            <span className="block text-[11px] leading-[1.35] text-muted-foreground!">
+              +{hidden} more on her record
+            </span>
+          ) : null}
+        </span>
+      </Link>
+    </DropdownMenuItem>
+  );
+}
 
 export function ShellTopBar({
   personName,
@@ -169,8 +225,8 @@ export function ShellTopBar({
         <DropdownMenuTrigger
           aria-label={
             notifyCount > 0
-              ? `Notifications — ${notifyCount} items need review`
-              : "Notifications"
+              ? `Notifications — ${notifyCount} ${notifyCount === 1 ? "family needs" : "families need"} your attention`
+              : "Notifications — nobody is waiting on you"
           }
           className="relative flex size-9 items-center justify-center rounded-lg border border-teal/20 text-teal-ink/80 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/30"
         >
@@ -179,30 +235,44 @@ export function ShellTopBar({
             <span className="absolute right-2 top-2 size-2 rounded-full bg-coral ring-2 ring-cloud" />
           ) : null}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-[280px]">
-          <DropdownMenuLabel className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+        {/* One row per family, her issues underneath (TOK-53). The flat version listed an
+            alert at a time, so Jordan Rivera took three of the four slots and the name a
+            founder was scanning for arrived three times. */}
+        <DropdownMenuContent align="start" className="min-w-[324px] p-1.5">
+          <DropdownMenuLabel className="flex items-baseline justify-between gap-3 px-1.5 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Needs attention
+            {notifyItems.length > 0 ? (
+              <span className="text-[10.5px] font-semibold tracking-[0.04em] text-coral">
+                {notifyItems.length === 1 ? "1 family" : `${notifyItems.length} families`}
+              </span>
+            ) : null}
           </DropdownMenuLabel>
           {notifyItems.length === 0 ? (
-            <p className="px-2 py-2 text-[12.5px] leading-snug text-muted-foreground">
-              Nothing queued here. Open Home for the live review list from your ledger.
+            <p className="rounded-md bg-cloud px-2.5 py-2.5 text-[12.5px] leading-snug text-muted-foreground">
+              Nobody is waiting on you. New agreements, invoices and follow-ups land here.
             </p>
           ) : (
-            notifyItems.slice(0, 5).map((item) => (
-              <DropdownMenuItem key={item.id} asChild>
-                <Link href={item.href} className="flex flex-col items-start gap-0.5 py-2">
-                  <span className="text-[13px] font-medium">{item.title}</span>
-                  {item.detail ? (
-                    <span className="text-[11.5px] text-muted-foreground">{item.detail}</span>
-                  ) : null}
+            <div className="space-y-0.5">
+              {notifyItems.map((item) => (
+                <NotifyRow key={item.id} item={item} />
+              ))}
+            </div>
+          )}
+          <DropdownMenuSeparator className="my-1.5" />
+          <div className="flex items-center justify-between gap-2 px-1.5 pb-0.5">
+            <DropdownMenuItem asChild className="px-0 py-0.5 focus:bg-transparent">
+              <Link href={tone === "doula" ? "/doula" : "/portal"} className="text-[12.5px] font-semibold text-teal! hover:text-teal-ink!">
+                Go to Home
+              </Link>
+            </DropdownMenuItem>
+            {tone === "doula" && notifyItems.length > 0 ? (
+              <DropdownMenuItem asChild className="px-0 py-0.5 focus:bg-transparent">
+                <Link href={REVIEW_BOARD_HREF} className="text-[12.5px] font-semibold text-teal! hover:text-teal-ink!">
+                  Work the whole list
                 </Link>
               </DropdownMenuItem>
-            ))
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link href={tone === "doula" ? "/doula" : "/portal"}>Go to Home</Link>
-          </DropdownMenuItem>
+            ) : null}
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
 

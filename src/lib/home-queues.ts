@@ -20,6 +20,7 @@ import type { PipelineStageName } from "@/lib/pipeline";
 import {
   reasonActionHref,
   reasonActionLabel,
+  reasonSummary,
   type NeedsAttentionReasonKey,
   type NeedsAttentionRow,
 } from "@/lib/needs-attention";
@@ -112,6 +113,66 @@ export function reviewBoard(rows: readonly NeedsAttentionRow[]): ReviewBoardRow[
 /** How many pieces of work the board holds — the line under its heading. */
 export function reviewTaskCount(rows: readonly NeedsAttentionRow[]): number {
   return rows.reduce((sum, row) => sum + row.reasons.length, 0);
+}
+
+/* -------------------------------------------------------------------- bell */
+
+/** One issue as the bell draws it: what is wrong, the number behind it, its colour. */
+export type ShellNotifyIssue = {
+  key: NeedsAttentionReasonKey;
+  /** "Agreement waiting". */
+  label: string;
+  /** "$2,800.00 · not signed", when the rule had a number to give. */
+  detail?: string;
+  /** Money and missed dates read terracotta; housekeeping reads ink. */
+  urgent: boolean;
+};
+
+/**
+ * One family in the notification popover — the name once, her issues underneath.
+ */
+export type ShellNotifyItem = {
+  /** The family's own id. Being the key is the point: one row per client (TOK-53). */
+  id: string;
+  /** The family's name, and nothing else. */
+  title: string;
+  /** "Agreement waiting · Open invoice" — the same short list Home prints. */
+  detail: string;
+  issues: ShellNotifyIssue[];
+  /** Always the family record. The bell opens the person, not a department. */
+  href: string;
+  /** True when the leading issue is money or a missed date. Drives the terracotta edge. */
+  urgent: boolean;
+};
+
+/**
+ * The bell, from the same rows the board and Home read (TOK-53).
+ *
+ * It used to be built by hand in the query layer: a row per unsigned contract, a row per
+ * open invoice, a row per open stage, so Jordan Rivera appeared three times in a list of
+ * four and the one thing a founder wanted — "who needs me" — had to be reassembled in
+ * her head. Grouping is not a rendering trick; it is the rule module's own answer, and
+ * this only words it.
+ */
+export function shellNotifyItems(
+  rows: readonly NeedsAttentionRow[],
+  limit = 5,
+): ShellNotifyItem[] {
+  return rows.slice(0, limit).map((row) => ({
+    id: row.clientId,
+    title: row.name,
+    detail: reasonSummary(row),
+    issues: row.reasons.map((reason) => ({
+      key: reason.key,
+      label: reason.label,
+      ...(reason.detail ? { detail: reason.detail } : {}),
+      urgent: reason.urgent,
+    })),
+    // The leading reason is the highest-weighted one, so its anchor is the section that
+    // clears the worst thing on this record.
+    href: row.reasons[0] ? reasonActionHref(row.clientId, row.reasons[0].key) : row.href,
+    urgent: row.reasons.some((reason) => reason.urgent),
+  }));
 }
 
 /* ------------------------------------------------------------------ family */

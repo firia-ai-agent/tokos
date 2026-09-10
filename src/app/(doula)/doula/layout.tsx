@@ -27,10 +27,6 @@ export default async function DoulaLayout({ children }: { children: React.ReactN
     .where(eq(organizations.id, session.user.organizationId ?? ""))
     .limit(1);
 
-  const attention = session.user.id
-    ? await shellAttention(session.user.organizationId ?? "", session.user.id)
-    : { count: 0, items: [] };
-
   const role = roleLabel(session.user.membershipRole);
   const orgName = org?.name ?? "Practice";
   const personMeta = `${role} · ${orgName}`;
@@ -39,6 +35,15 @@ export default async function DoulaLayout({ children }: { children: React.ReactN
   // pipeline vocabulary. A member with role `doula` gets a shell scoped to her own
   // practice, with no nav or search route into the agency surfaces she cannot act on.
   const persona = shellPersona(session.user.membershipRole);
+
+  // The bell reads the same rules the review board does, through the same scope: the
+  // practice for an agency owner, her own families for an assigned doula (TOK-53).
+  const attention = session.user.id
+    ? await shellAttention(
+        session.user.organizationId ?? "",
+        persona === "agency" ? {} : { doulaUserId: session.user.id },
+      )
+    : { count: 0, items: [] };
 
   return (
     <AppShell

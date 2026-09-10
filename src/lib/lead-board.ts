@@ -45,6 +45,11 @@ export type LeadRowLike = {
   stageEnteredAt: Date | null;
   primaryDoulaUserId: string | null;
   lastNoteAt: Date | null;
+  /**
+   * Open invoices and unsigned agreements, in cents (TOK-53). Optional so a test can
+   * still build a row by hand; absent simply means "no money is waiting on this family".
+   */
+  ledger?: { outstandingCents?: number; unsignedCents?: number };
 };
 
 export type LeadQuery = {
@@ -132,6 +137,8 @@ function attentionInputOf(row: LeadRowLike): NeedsAttentionInput {
     hasPrimaryDoula: Boolean(row.primaryDoulaUserId),
     stageEnteredAt: row.stageEnteredAt,
     lastNoteAt: row.lastNoteAt,
+    unsignedAgreementCents: row.ledger?.unsignedCents,
+    openInvoiceCents: row.ledger?.outstandingCents,
   };
 }
 

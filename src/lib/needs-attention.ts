@@ -12,14 +12,23 @@
  */
 
 import { differenceInCalendarDays } from "date-fns";
-import { isOpenStage, stageLabel, type PipelineStageName } from "@/lib/pipeline";
+import {
+  isOpenLeadStage,
+  isOpenStage,
+  stageLabel,
+  type PipelineStageName,
+} from "@/lib/pipeline";
 import { followUpState, leadDate } from "@/lib/lead-fields";
+import { formatCents } from "@/lib/money";
 
 export const NEEDS_ATTENTION_REASONS = [
+  "agreement_waiting",
+  "open_invoice",
   "follow_up_overdue",
   "consult_note_missing",
   "unmatched",
   "unreviewed",
+  "intake_nudge",
 ] as const;
 export type NeedsAttentionReasonKey = (typeof NEEDS_ATTENTION_REASONS)[number];
 
@@ -28,14 +37,43 @@ export type NeedsAttentionReason = {
   label: string;
   /** Highest first. Drives both the row order and which reason leads the summary. */
   weight: number;
+  /**
+   * The one number or word that makes the reason concrete — "$2,800.00 · not signed",
+   * "Fit confirmed". Optional because most rules are true or false and nothing more; a
+   * detail is only ever a fact the caller passed in, never invented copy.
+   */
+  detail?: string;
+  /** Money and overdue work reads terracotta; a soft nudge does not (TOK-53). */
+  urgent: boolean;
 };
 
 /** What each rule is called on screen. Agency vocabulary; never a client surface. */
 export const NEEDS_ATTENTION_LABELS: Record<NeedsAttentionReasonKey, string> = {
+  agreement_waiting: "Agreement waiting",
+  open_invoice: "Open invoice",
   follow_up_overdue: "Follow-up overdue",
   consult_note_missing: "Consult done, no note logged",
   unmatched: "No primary doula",
   unreviewed: "Not reviewed",
+  intake_nudge: "Keep intake moving",
+};
+
+/**
+ * Which reasons are money or a missed date, and which are housekeeping.
+ *
+ * The bell used to draw every line the same weight, so "sent an agreement three weeks ago
+ * and nobody signed it" looked exactly like "nobody has ticked reviewed". Terracotta is
+ * spent on the first kind only — a warning colour on everything is a warning colour on
+ * nothing.
+ */
+const URGENT: Record<NeedsAttentionReasonKey, boolean> = {
+  agreement_waiting: true,
+  open_invoice: true,
+  follow_up_overdue: true,
+  consult_note_missing: false,
+  unmatched: false,
+  unreviewed: false,
+  intake_nudge: false,
 };
 
 /**
@@ -47,10 +85,13 @@ export const NEEDS_ATTENTION_LABELS: Record<NeedsAttentionReasonKey, string> = {
  * a queue that opens nothing.
  */
 const ACTIONS: Record<NeedsAttentionReasonKey, { action: string; anchor: string }> = {
+  agreement_waiting: { action: "Chase the signature", anchor: "#money" },
+  open_invoice: { action: "Chase the payment", anchor: "#money" },
   follow_up_overdue: { action: "Set the next follow-up", anchor: "#lead-details" },
   consult_note_missing: { action: "Write the consult note", anchor: "#notes" },
   unmatched: { action: "Name a primary doula", anchor: "#care-team" },
   unreviewed: { action: "Review the record", anchor: "#lead-details" },
+  intake_nudge: { action: "Move intake along", anchor: "#lead-details" },
 };
 
 export function reasonActionLabel(key: NeedsAttentionReasonKey): string {
@@ -62,11 +103,20 @@ export function reasonActionHref(clientId: string, key: NeedsAttentionReasonKey)
   return `/doula/clients/${clientId}${ACTIONS[key].anchor}`;
 }
 
+/**
+ * Commercial urgency outranks housekeeping, which outranks a nudge (TOK-53).
+ *
+ * An unsigned agreement and an unpaid invoice are the two findings with a number attached
+ * to them, so they sort above the office chores and lead the summary under the name.
+ */
 const WEIGHTS: Record<NeedsAttentionReasonKey, number> = {
+  agreement_waiting: 60,
+  open_invoice: 50,
   follow_up_overdue: 40,
   consult_note_missing: 30,
   unmatched: 20,
   unreviewed: 10,
+  intake_nudge: 5,
 };
 
 export type NeedsAttentionInput = {
@@ -80,6 +130,14 @@ export type NeedsAttentionInput = {
   stageEnteredAt?: Date | string | null;
   /** Most recent line in the notes feed, whatever wrote it. */
   lastNoteAt?: Date | string | null;
+  /** A non-voided agreement is out and nobody has signed it. */
+  hasUnsignedAgreement?: boolean;
+  /** What those unsigned agreements are worth, in cents. Detail copy only. */
+  unsignedAgreementCents?: number;
+  /** At least one invoice sits at `open`. */
+  hasOpenInvoice?: boolean;
+  /** What those open invoices are worth, in cents. Detail copy only. */
+  openInvoiceCents?: number;
 };
 
 export type NeedsAttentionRow = {
@@ -99,11 +157,19 @@ function asDate(value: Date | string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-const reason = (key: NeedsAttentionReasonKey): NeedsAttentionReason => ({
+const reason = (key: NeedsAttentionReasonKey, detail?: string): NeedsAttentionReason => ({
   key,
   label: NEEDS_ATTENTION_LABELS[key],
   weight: WEIGHTS[key],
+  urgent: URGENT[key],
+  ...(detail ? { detail } : {}),
 });
+
+/** "$2,800.00" when there is a number worth printing, nothing when there is not. */
+const money = (cents: number | undefined, suffix?: string): string | undefined => {
+  if (!cents || cents <= 0) return undefined;
+  return suffix ? `${formatCents(cents)} · ${suffix}` : formatCents(cents);
+};
 
 /**
  * The rules, in one function.
@@ -118,6 +184,16 @@ export function needsAttentionReasons(
   if (!isOpenStage(input.stage)) return [];
 
   const reasons: NeedsAttentionReason[] = [];
+
+  // Money first. Both facts come from the ledger the caller already read, so the rule is
+  // "is anything outstanding", not "go and look" — this module still touches no database.
+  if (input.hasUnsignedAgreement || (input.unsignedAgreementCents ?? 0) > 0) {
+    reasons.push(reason("agreement_waiting", money(input.unsignedAgreementCents, "not signed")));
+  }
+
+  if (input.hasOpenInvoice || (input.openInvoiceCents ?? 0) > 0) {
+    reasons.push(reason("open_invoice", money(input.openInvoiceCents)));
+  }
 
   if (followUpState(input.followUpDueOn, today).state === "overdue") {
     reasons.push(reason("follow_up_overdue"));
@@ -135,6 +211,22 @@ export function needsAttentionReasons(
   if (!input.hasPrimaryDoula) reasons.push(reason("unmatched"));
 
   if (!input.reviewed) reasons.push(reason("unreviewed"));
+
+  // The soft one, last, and deliberately hard to trigger.
+  //
+  // The flat bell fired this on every open funnel stage, which is how Jordan arrived in
+  // the list a third time under "Fit" while an unsigned agreement and an open invoice
+  // were already shouting about her. A nudge is only worth a row when it is the *only*
+  // thing anyone can say about a family: she is still in the funnel, nothing sharper has
+  // fired, and — the gap `follow_up_overdue` deliberately leaves — nobody has planned the
+  // next step at all. Anything less strict and the queue becomes the client list.
+  if (
+    reasons.length === 0 &&
+    isOpenLeadStage(input.stage) &&
+    !hasFollowUp(input.followUpDueOn)
+  ) {
+    reasons.push(reason("intake_nudge", stageLabel(input.stage)));
+  }
 
   return reasons.sort((a, b) => b.weight - a.weight);
 }

@@ -28,34 +28,21 @@ import {
 import { clientChrome } from "@/lib/client-brand";
 
 import { formatCents } from "@/lib/money";
-import {
-  isOpenLeadStage,
-  migrateStage,
-  staffStageLabel,
-  stageLabel,
-  type PipelineStageName,
-} from "@/lib/pipeline";
-import { homeCaseloadHint, openLeadNudge, type ShellPersona } from "@/lib/shell-persona";
+import { isOpenLeadStage, migrateStage, type PipelineStageName } from "@/lib/pipeline";
+import { homeCaseloadHint, type ShellPersona } from "@/lib/shell-persona";
 import { familyTemplates, staffTemplates } from "@/lib/form-audience";
 import {
   needsAttentionRows,
   type NeedsAttentionInput,
   type NeedsAttentionRow,
 } from "@/lib/needs-attention";
+import { shellNotifyItems, type ShellNotifyItem } from "@/lib/home-queues";
 
 export type HomeKpi = {
   label: string;
   value: string;
   hint: string;
   tone: "teal" | "coral" | "ink";
-};
-
-export type HomeAttention = {
-  id: string;
-  title: string;
-  detail: string;
-  href: string;
-  cta: string;
 };
 
 export type HomeTimelineItem = {
@@ -206,27 +193,6 @@ export async function revenueHome(
   // stage strings that has to be found again every time the model grows (TOK-49).
   const leadOrFit = myClients.filter((row) => isOpenLeadStage(canonicalStage(row)));
 
-  // "N forms still open in the portal" must mean the family's own forms. A staff visit
-  // note is the doula's work, not a family's homework, so it never inflates this (TOK-50).
-  const incompleteForms = clientIds.length
-    ? await db
-        .select({
-          clientId: formAssignments.clientId,
-          n: count(),
-        })
-        .from(formAssignments)
-        .innerJoin(formTemplates, eq(formTemplates.id, formAssignments.templateId))
-        .where(
-          and(
-            eq(formAssignments.organizationId, organizationId),
-            eq(formAssignments.status, "incomplete"),
-            eq(formTemplates.audience, "family"),
-            inArray(formAssignments.clientId, clientIds),
-          ),
-        )
-        .groupBy(formAssignments.clientId)
-    : [];
-
   const monthBars: HomeMonthBar[] = [];
   for (let i = 5; i >= 0; i -= 1) {
     const cursor = subMonths(monthStart, i);
@@ -244,59 +210,6 @@ export async function revenueHome(
       display: cents === 0 ? "$0" : formatCents(cents).replace(/\.00$/, ""),
     });
   }
-
-  const clientName = (id: string) =>
-    myClients.find((row) => row.client.id === id)?.client.displayName ?? "Family";
-
-  const attention: HomeAttention[] = [];
-
-  for (const contract of unsignedContracts.slice(0, 4)) {
-    attention.push({
-      id: `contract-${contract.id}`,
-      title: `Agreement waiting — ${clientName(contract.clientId)}`,
-      detail: `${formatCents(contract.amountCents)} · sent, not signed`,
-      href: `/doula/clients/${contract.clientId}`,
-      cta: "Open",
-    });
-  }
-
-  for (const invoice of outstandingInvoices.slice(0, 4)) {
-    attention.push({
-      id: `invoice-${invoice.id}`,
-      title: `Open invoice — ${clientName(invoice.clientId)}`,
-      detail: `${formatCents(invoice.amountCents)} · ${invoice.number ?? "unnumbered"}`,
-      href: `/doula/invoices`,
-      cta: "Review",
-    });
-  }
-
-  for (const row of incompleteForms.slice(0, 4)) {
-    const n = Number(row.n ?? 0);
-    if (n <= 0) continue;
-    attention.push({
-      id: `forms-${row.clientId}`,
-      title: `Forms incomplete — ${clientName(row.clientId)}`,
-      detail: `${n} form${n === 1 ? "" : "s"} still open in the portal`,
-      href: `/doula/clients/${row.clientId}`,
-      cta: "View",
-    });
-  }
-
-  for (const row of leadOrFit.slice(0, 4)) {
-    attention.push({
-      id: `stage-${row.client.id}`,
-      title: `${row.client.displayName} · ${staffStageLabel(persona, canonicalStage(row))}`,
-      detail: row.client.edd
-        ? `EDD ${format(new Date(`${row.client.edd}T12:00:00`), "MMM d")} · ${openLeadNudge(persona).toLowerCase()}`
-        : openLeadNudge(persona),
-      href: `/doula/clients/${row.client.id}`,
-      cta: "Open",
-    });
-  }
-
-  const uniqueAttention = attention
-    .filter((item, index, arr) => arr.findIndex((other) => other.id === item.id) === index)
-    .slice(0, 6);
 
   const timeline: HomeTimelineItem[] = myClients
     .filter((row) => Boolean(row.client.edd))
@@ -378,6 +291,9 @@ export async function revenueHome(
   // and Needs attention reaches families this staff member is not assigned to.
   const ledgerByClient = clientLedgers(allInvoices, allContracts);
 
+  const clientName = (id: string) =>
+    myClients.find((row) => row.client.id === id)?.client.displayName ?? "Family";
+
   const money = (cents: number) => formatCents(cents).replace(/\.00$/, "");
   const moneyInMotion: HomeMoneyRow[] = [
     ...outstandingInvoices.map((invoice) => ({
@@ -402,11 +318,9 @@ export async function revenueHome(
     clients: myClients,
     kpis,
     monthBars,
-    attention: uniqueAttention,
     timeline,
     ledgerByClient,
     moneyInMotion,
-    reviewCount: uniqueAttention.length,
     clearedTotal: cleared,
     outstandingTotal: outstanding,
   };
@@ -693,77 +607,26 @@ export async function resourcesHub(organizationId: string) {
   };
 }
 
-/** Lightweight attention list for shell notifications — real ledger/pipeline only. */
-export async function shellAttention(organizationId: string, doulaUserId: string) {
-  const db = getDb();
-  const myClients = await db
-    .select({
-      client: clients,
-      stage: pipelineStages.stage,
-    })
-    .from(clients)
-    .innerJoin(pipelineStages, eq(pipelineStages.clientId, clients.id))
-    .innerJoin(assignments, eq(assignments.clientId, clients.id))
-    .where(
-      and(
-        eq(clients.organizationId, organizationId),
-        eq(assignments.userId, doulaUserId),
-        eq(assignments.status, "active"),
-      ),
-    );
-
-  const clientIds = myClients.map((row) => row.client.id);
-  if (clientIds.length === 0) return { count: 0, items: [] as HomeAttention[] };
-
-  const myInvoices = await db
-    .select()
-    .from(invoices)
-    .where(and(eq(invoices.organizationId, organizationId), inArray(invoices.clientId, clientIds)));
-  const myContracts = await db
-    .select()
-    .from(contracts)
-    .where(and(eq(contracts.organizationId, organizationId), inArray(contracts.clientId, clientIds)));
-
-  const nameOf = (id: string) =>
-    myClients.find((row) => row.client.id === id)?.client.displayName ?? "Family";
-
-  const items: HomeAttention[] = [];
-
-  for (const contract of myContracts.filter((c) => c.status !== "voided" && !c.signedAt).slice(0, 3)) {
-    items.push({
-      id: `contract-${contract.id}`,
-      title: `Agreement waiting — ${nameOf(contract.clientId)}`,
-      detail: `${formatCents(contract.amountCents)} · not signed`,
-      href: `/doula/clients/${contract.clientId}`,
-      cta: "Open",
-    });
-  }
-
-  for (const invoice of myInvoices.filter((inv) => inv.status === "open").slice(0, 3)) {
-    items.push({
-      id: `invoice-${invoice.id}`,
-      title: `Open invoice — ${nameOf(invoice.clientId)}`,
-      detail: formatCents(invoice.amountCents),
-      href: "/doula/invoices",
-      cta: "Review",
-    });
-  }
-
-  for (const row of myClients.filter((r) => isOpenLeadStage(migrateStage(r.stage))).slice(0, 3)) {
-    items.push({
-      id: `stage-${row.client.id}`,
-      title: `${row.client.displayName} · ${stageLabel(migrateStage(row.stage))}`,
-      detail: "Keep intake moving",
-      href: `/doula/clients/${row.client.id}`,
-      cta: "Open",
-    });
-  }
-
-  const unique = items
-    .filter((item, index, arr) => arr.findIndex((other) => other.id === item.id) === index)
-    .slice(0, 5);
-
-  return { count: unique.length, items: unique };
+/**
+ * The bell (TOK-53).
+ *
+ * This used to hand-build a flat alert list — one row per unsigned contract, one per open
+ * invoice, one per open stage — and Jordan Rivera filled three of the four slots while
+ * Avery Kim filled the fourth. Now it asks the same question Home and the review board
+ * ask, of the same rules, and gets back one row per family with her reasons attached.
+ *
+ * Scope follows the reader: an agency owner sees the practice, an assigned doula sees her
+ * own families (TOK-34). The count is families waiting, not findings — the number over
+ * the bell should answer "how many people need me", and the issues are listed under each
+ * name where they can be read.
+ */
+export async function shellAttention(
+  organizationId: string,
+  opts: { doulaUserId?: string } = {},
+  today: Date = new Date(),
+): Promise<{ count: number; items: ShellNotifyItem[] }> {
+  const rows = await needsAttentionQueue(organizationId, opts, today);
+  return { count: rows.length, items: shellNotifyItems(rows) };
 }
 
 /**
@@ -897,6 +760,13 @@ export type LeadBoardRow = {
   primaryDoulaName: string | null;
   ownerName: string | null;
   lastNoteAt: Date | null;
+  /**
+   * Open invoices, unsigned agreements and cleared money on this family (TOK-53).
+   *
+   * The board reads it so "Agreement waiting" and "Open invoice" are decided by the same
+   * rules everything else is, rather than by a second hand-rolled list in the shell.
+   */
+  ledger: ClientLedger;
 };
 
 export async function leadBoard(
@@ -965,6 +835,34 @@ export async function leadBoard(
     noteRows.map((row) => [row.clientId, row.at ? new Date(row.at) : null]),
   );
 
+  // Money, in the same shape Home's cards already use. Two scoped reads rather than a
+  // query per family, and the exact function that builds the dense card's ledger, so the
+  // bell, the board and Home cannot disagree about what a family owes.
+  const [invoiceRows, contractRows] = clientIds.length
+    ? await Promise.all([
+        db
+          .select()
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.organizationId, organizationId),
+              inArray(invoices.clientId, clientIds),
+            ),
+          ),
+        db
+          .select()
+          .from(contracts)
+          .where(
+            and(
+              eq(contracts.organizationId, organizationId),
+              inArray(contracts.clientId, clientIds),
+            ),
+          ),
+      ])
+    : [[], []];
+  const ledgers = clientLedgers(invoiceRows, contractRows);
+  const emptyLedger: ClientLedger = { outstandingCents: 0, unsignedCents: 0, clearedCents: 0 };
+
   // A family can carry more than one engagement row; the board wants her once, with a
   // primary if any engagement names one.
   const byClient = new Map<string, LeadBoardRow>();
@@ -982,6 +880,7 @@ export async function leadBoard(
       primaryDoulaName: row.primaryDoulaName ?? null,
       ownerName: row.ownerName ?? null,
       lastNoteAt: lastNoteOf.get(row.client.id) ?? null,
+      ledger: ledgers[row.client.id] ?? emptyLedger,
     });
   }
 
@@ -999,6 +898,8 @@ export function attentionInput(row: LeadBoardRow): NeedsAttentionInput {
     hasPrimaryDoula: Boolean(row.primaryDoulaUserId),
     stageEnteredAt: row.stageEnteredAt,
     lastNoteAt: row.lastNoteAt,
+    unsignedAgreementCents: row.ledger.unsignedCents,
+    openInvoiceCents: row.ledger.outstandingCents,
   };
 }
 

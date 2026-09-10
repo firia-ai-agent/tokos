@@ -53,7 +53,147 @@ describe("overdue follow-up", () => {
   });
 
   it("does not fire when no follow-up is set — that is unplanned, not urgent", () => {
-    expect(keys({ ...clean, followUpDueOn: null })).toEqual([]);
+    // Unplanned is the soft nudge's job now (TOK-53), never the overdue rule's.
+    expect(keys({ ...clean, followUpDueOn: null })).toEqual(["intake_nudge"]);
+    expect(keys({ ...clean, followUpDueOn: null, stage: "active_care" })).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------- TOK-53 */
+
+describe("agreement waiting", () => {
+  it("fires on an unsigned agreement, by flag or by amount", () => {
+    expect(keys({ ...clean, hasUnsignedAgreement: true })).toEqual(["agreement_waiting"]);
+    expect(keys({ ...clean, unsignedAgreementCents: 280000 })).toEqual(["agreement_waiting"]);
+  });
+
+  it("clears once it is signed — the caller stops sending the fact", () => {
+    expect(
+      keys({ ...clean, hasUnsignedAgreement: false, unsignedAgreementCents: 0 }),
+    ).toEqual([]);
+  });
+
+  it("carries the amount as detail, so the row can say what is at stake", () => {
+    const [reason] = needsAttentionReasons({ ...clean, unsignedAgreementCents: 280000 }, TODAY);
+    expect(reason.detail).toBe("$2,800.00 · not signed");
+    expect(reason.urgent).toBe(true);
+  });
+});
+
+describe("open invoice", () => {
+  it("fires while an invoice sits open", () => {
+    expect(keys({ ...clean, hasOpenInvoice: true })).toEqual(["open_invoice"]);
+    expect(keys({ ...clean, openInvoiceCents: 90000 })).toEqual(["open_invoice"]);
+  });
+
+  it("clears when nothing is open — paid, draft and void are all silence", () => {
+    expect(keys({ ...clean, hasOpenInvoice: false, openInvoiceCents: 0 })).toEqual([]);
+  });
+
+  it("carries the amount as detail", () => {
+    const [reason] = needsAttentionReasons({ ...clean, openInvoiceCents: 90000 }, TODAY);
+    expect(reason.detail).toBe("$900.00");
+  });
+});
+
+describe("the intake nudge", () => {
+  const unplanned: NeedsAttentionInput = { ...clean, followUpDueOn: null };
+
+  it("fires on an open funnel stage with no next step planned", () => {
+    expect(keys(unplanned)).toEqual(["intake_nudge"]);
+    expect(needsAttentionReasons(unplanned, TODAY)[0].detail).toBe("Outreach sent");
+  });
+
+  it("stays quiet once a follow-up is on the record", () => {
+    expect(keys({ ...unplanned, followUpDueOn: "2026-09-25" })).toEqual([]);
+  });
+
+  it("stays quiet past the funnel — care is not intake", () => {
+    expect(keys({ ...unplanned, stage: "active_care" })).toEqual([]);
+    expect(keys({ ...unplanned, stage: "complete" })).toEqual([]);
+  });
+
+  it("never doubles up: a sharper reason absorbs it", () => {
+    // This is the Jordan × N fix at the rule level. Money is already shouting about her,
+    // so "keep intake moving" underneath it is the same finding wearing a second row.
+    expect(keys({ ...unplanned, hasOpenInvoice: true })).toEqual(["open_invoice"]);
+    expect(keys({ ...unplanned, reviewed: false })).toEqual(["unreviewed"]);
+  });
+
+  it("is the softest thing in the queue", () => {
+    const [nudge] = needsAttentionReasons(unplanned, TODAY);
+    expect(nudge.urgent).toBe(false);
+    const [worst] = needsAttentionReasons({ ...clean, hasUnsignedAgreement: true }, TODAY);
+    expect(worst.weight).toBeGreaterThan(nudge.weight);
+  });
+});
+
+describe("commercial urgency outranks housekeeping", () => {
+  it("leads the summary with the agreement, then the invoice", () => {
+    const [row] = needsAttentionRows(
+      [
+        {
+          ...clean,
+          clientId: "jordan",
+          name: "Jordan Rivera",
+          stage: "fit_confirmed",
+          reviewed: false,
+          unsignedAgreementCents: 280000,
+          openInvoiceCents: 90000,
+        },
+      ],
+      TODAY,
+    );
+    expect(row.reasons.map((r) => r.key)).toEqual([
+      "agreement_waiting",
+      "open_invoice",
+      "unreviewed",
+    ]);
+  });
+});
+
+/**
+ * The whole of TOK-53, stated once.
+ *
+ * The bell used to list an alert at a time, so the founder's own worked example — an
+ * unsigned agreement, an open invoice and a funnel stage on one family — took three of
+ * four slots under the same name.
+ */
+describe("one row per family, not one row per alert", () => {
+  const jordan: NeedsAttentionInput = {
+    ...clean,
+    clientId: "jordan",
+    name: "Jordan Rivera",
+    stage: "fit_confirmed",
+    followUpDueOn: null,
+    unsignedAgreementCents: 280000,
+    openInvoiceCents: 90000,
+  };
+  const avery: NeedsAttentionInput = {
+    ...clean,
+    clientId: "avery",
+    name: "Avery Kim",
+    stage: "outreach_sent",
+    followUpDueOn: null,
+  };
+
+  it("collapses three findings into one Jordan", () => {
+    const queue = needsAttentionRows([jordan, avery], TODAY);
+    expect(queue.map((row) => row.clientId)).toEqual(["jordan", "avery"]);
+    expect(queue.filter((row) => row.name === "Jordan Rivera")).toHaveLength(1);
+  });
+
+  it("keeps every finding, under the one name", () => {
+    const [row] = needsAttentionRows([jordan, avery], TODAY);
+    expect(row.reasons.map((r) => r.key)).toEqual(["agreement_waiting", "open_invoice"]);
+    expect(reasonSummary(row)).toBe("Agreement waiting · Open invoice");
+    expect(row.href).toBe("/doula/clients/jordan");
+  });
+
+  it("still gives the quieter family her own row", () => {
+    const [, row] = needsAttentionRows([jordan, avery], TODAY);
+    expect(reasonSummary(row)).toBe("Keep intake moving");
+    expect(row.href).toBe("/doula/clients/avery");
   });
 });
 

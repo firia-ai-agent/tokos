@@ -129,15 +129,17 @@ describe("filters", () => {
 
   it("tabs narrow the same way the checkboxes do", () => {
     expect(ids({ tab: "unmatched" })).toEqual(["2"]);
-    // Row 1 is overdue, unreviewed and a consult_done with no note; row 2 is unmatched.
-    expect(ids({ tab: "attention" })).toEqual(["1", "2"]);
+    // Row 1 is overdue, unreviewed and a consult_done with no note; row 2 is unmatched;
+    // row 3 is clean but sits in the funnel with no next step planned, which is the
+    // intake nudge (TOK-53).
+    expect(ids({ tab: "attention" })).toEqual(["1", "2", "3"]);
     expect(ids({ tab: "all" })).toEqual(["1", "2", "3"]);
   });
 
   it("counts the whole scope, not the filtered view", () => {
     expect(leadBoardCounts(rows, TODAY)).toEqual({
       total: 3,
-      attention: 2,
+      attention: 3,
       unmatched: 1,
       overdue: 1,
     });
@@ -147,7 +149,23 @@ describe("filters", () => {
     expect(leadBoardView(rows, q({ tab: "attention" }), TODAY).map((r) => r.client.id)).toEqual([
       "1",
       "2",
+      "3",
     ]);
+  });
+
+  /** TOK-53: money reaches the board's rules through the row, not a second alert list. */
+  it("puts a family with an unsigned agreement or an open invoice in Needs attention", () => {
+    const quiet = row(
+      { id: "money", displayName: "Jordan Rivera", followUpDueOn: "2026-09-25" },
+      { stage: "fit_confirmed" },
+    );
+    expect(filterLeadRows([quiet], q({ tab: "attention" }), TODAY)).toEqual([]);
+
+    const owing = { ...quiet, ledger: { unsignedCents: 280000, outstandingCents: 90000 } };
+    expect(filterLeadRows([owing], q({ tab: "attention" }), TODAY).map((r) => r.client.id)).toEqual([
+      "money",
+    ]);
+    expect(leadBoardCounts([owing], TODAY).attention).toBe(1);
   });
 });
 
