@@ -33,6 +33,7 @@ import {
 import { clientChrome } from "@/lib/client-brand";
 
 import { formatCents } from "@/lib/money";
+import { paymentStatusJoin } from "@/lib/payment-status";
 import {
   funnelFlagsFrom,
   isOpenLeadStage,
@@ -1287,7 +1288,7 @@ export async function invoiceDashboardRows(organizationId: string): Promise<Invo
     })
     .from(invoices)
     .innerJoin(clients, eq(clients.id, invoices.clientId))
-    .leftJoin(paymentStatuses, eq(paymentStatuses.contractId, invoices.contractId))
+    .leftJoin(paymentStatuses, paymentStatusJoin())
     .leftJoin(contracts, eq(contracts.id, invoices.contractId))
     .leftJoin(engagements, eq(engagements.id, invoices.engagementId))
     .where(eq(invoices.organizationId, organizationId));
@@ -1358,7 +1359,7 @@ export async function familyInvoices(
       engagementPackage: engagements.packageLabel,
     })
     .from(invoices)
-    .leftJoin(paymentStatuses, eq(paymentStatuses.contractId, invoices.contractId))
+    .leftJoin(paymentStatuses, paymentStatusJoin())
     .leftJoin(contracts, eq(contracts.id, invoices.contractId))
     .leftJoin(engagements, eq(engagements.id, invoices.engagementId))
     .where(and(eq(invoices.organizationId, organizationId), eq(invoices.clientId, clientId)));

@@ -19,6 +19,7 @@ import {
   nextInvoiceNumber,
   parseAmountToCents,
 } from "@/lib/invoice-dashboard";
+import { openPaymentStatus } from "@/lib/payment-status";
 import { requireStaff, requireStaffManager } from "@/lib/tenancy";
 
 const INVOICES_PATH = "/doula/invoices";
@@ -115,6 +116,15 @@ export async function createInvoiceAction(formData: FormData) {
     description: description || "Doula care",
     quantity: 1,
     unitAmountCents: amountCents,
+  });
+  // The row `sendContract` opens for a contract-backed bill, opened here too (TOK-61).
+  // Without it a hand invoice had nowhere to record a decline, a refund, or a debit still
+  // clearing, so the family's pay page could only ever say "due" — and `due` is precisely
+  // what it is born as, because raising a bill is not receiving money.
+  await openPaymentStatus({
+    organizationId: staff.organizationId,
+    invoiceId,
+    amountCents,
   });
 
   await writeAudit({

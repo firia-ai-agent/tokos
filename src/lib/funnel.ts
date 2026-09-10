@@ -38,6 +38,7 @@ import {
 } from "@/lib/pipeline";
 import { AI_NOTE_SOURCES, type AiNoteSource } from "@/lib/lead-fields";
 import { paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
+import { openPaymentStatus, setPaymentStatusForInvoice } from "@/lib/payment-status";
 import { dueDateFrom, nextInvoiceNumber } from "@/lib/invoice-dashboard";
 import { assertSlotOpen } from "@/lib/calendar";
 import { appUrl } from "@/lib/env";
@@ -321,15 +322,6 @@ export async function sendContract(input: {
     type: "sent",
     actorUserId: input.actorUserId,
   });
-  await db.insert(paymentStatuses).values({
-    id: newId(),
-    organizationId: input.organizationId,
-    contractId,
-    method: "stripe",
-    status: "due",
-    amountCents,
-  });
-
   const invoiceCount = (await db.select().from(invoices).where(eq(invoices.organizationId, input.organizationId))).length;
   const invoiceId = newId();
   // Numbering and payment terms are the practice's, declared once beside the Templates
@@ -353,6 +345,14 @@ export async function sendContract(input: {
     description: packageLabel,
     quantity: 1,
     unitAmountCents: amountCents,
+  });
+  // Opened after the invoice rather than after the contract, so the row is anchored to
+  // the bill it tracks — the same call the hand-invoice path makes (TOK-61).
+  await openPaymentStatus({
+    organizationId: input.organizationId,
+    invoiceId,
+    contractId,
+    amountCents,
   });
 
   const esign = await createSignatureRequest({
@@ -501,18 +501,15 @@ export async function markInvoicePaid(input: {
     })
     .where(eq(invoices.id, invoice.id));
 
-  if (invoice.contractId) {
-    await db
-      .update(paymentStatuses)
-      .set({
-        status: "cleared",
-        method,
-        externalId: input.externalId,
-        clearedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(paymentStatuses.contractId, invoice.contractId));
-  }
+  // Every invoice has a payment row to clear now, contract-backed or hand-raised (TOK-61).
+  await setPaymentStatusForInvoice({
+    organizationId: input.organizationId,
+    invoice,
+    status: "cleared",
+    method,
+    externalId: input.externalId,
+    clearedAt: new Date(),
+  });
 
   await writeAudit({
     organizationId: input.organizationId,
@@ -546,18 +543,16 @@ export async function recordPaymentFailure(input: {
   }
 
   const statuses = paymentOutcomeStatuses(input.outcome);
-  if (invoice.contractId) {
-    await db
-      .update(paymentStatuses)
-      .set({
-        status: statuses.paymentStatus,
-        method: "manual",
-        externalId: input.externalId,
-        clearedAt: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(paymentStatuses.contractId, invoice.contractId));
-  }
+  // A declined card on a hand-raised invoice used to land nowhere at all, so the family
+  // was shown "due" for a payment she had already watched fail (TOK-61).
+  await setPaymentStatusForInvoice({
+    organizationId: input.organizationId,
+    invoice,
+    status: statuses.paymentStatus,
+    method: "manual",
+    externalId: input.externalId,
+    clearedAt: null,
+  });
 
   await writeAudit({
     organizationId: input.organizationId,

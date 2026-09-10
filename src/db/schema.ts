@@ -254,10 +254,24 @@ export const esignArtifacts = pgTable("esign_artifacts", {
   index("esign_artifacts_contract_idx").on(table.contractId),
 ]);
 
+/**
+ * One row per bill, tracking what the money actually did — `due`, `cleared`, `failed`.
+ *
+ * It was born hanging off `contracts`, because at the time every invoice came from a
+ * signed care agreement. A hand-raised invoice has no contract (TOK-55), so it got no row
+ * at all and there was nowhere to record a declined card or a refund against it — the
+ * family's pay page could only ever say "due" (TOK-61).
+ *
+ * So the anchor is `invoiceId` now, and `contractId` is nullable: a contract-backed
+ * payment carries both, a hand invoice carries only the invoice. Rows written before
+ * TOK-61 carry only the contract, which is why every reader matches on either
+ * (`paymentStatusForInvoice` in `@/lib/payment-status`) instead of picking one.
+ */
 export const paymentStatuses = pgTable("payment_statuses", {
   id: uuid("id").primaryKey(),
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),
-  contractId: uuid("contract_id").notNull().references(() => contracts.id),
+  contractId: uuid("contract_id").references(() => contracts.id),
+  invoiceId: uuid("invoice_id").references(() => invoices.id),
   method: text("method").notNull(),
   status: text("status").notNull(),
   amountCents: integer("amount_cents").notNull(),
@@ -265,7 +279,10 @@ export const paymentStatuses = pgTable("payment_statuses", {
   clearedAt: timestamp("cleared_at", { withTimezone: true }),
   ...timestamps,
 }, (table) => [
+  // Postgres lets a partial-unique index hold many NULLs, so "one row per contract" and
+  // "one row per invoice" both still hold while either column may be absent.
   uniqueIndex("payment_statuses_contract_idx").on(table.contractId),
+  uniqueIndex("payment_statuses_invoice_idx").on(table.invoiceId),
   index("payment_statuses_external_idx").on(table.method, table.externalId),
 ]);
 
