@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import type { ChartAnswers } from "../lib/chart/field-defs";
+import type { ProviderRate } from "../lib/provider-rates";
 import {
   BIRTH_LOG_DEFAULT_SHARE_POLICY,
   DEFAULT_SHARE_POLICY,
@@ -47,6 +48,13 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   credentialsLabel: text("credentials_label"),
   image: text("image"),
+  /**
+   * When this person accepted the Tokos terms, and which version they accepted (TOK-57).
+   * One row per person rather than one per invite: a doula who joins a second agency has
+   * already said yes, and "has this human agreed" is a fact about the human.
+   */
+  tosAcceptedAt: timestamp("tos_accepted_at", { withTimezone: true }),
+  tosVersion: text("tos_version"),
   ...timestamps,
 }, (table) => [uniqueIndex("users_email_idx").on(table.email)]);
 
@@ -72,6 +80,8 @@ export const invites = pgTable("invites", {
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   invitedByUserId: uuid("invited_by_user_id").references(() => users.id),
   clientId: uuid("client_id"),
+  /** Typed into the Add-team-member popup, so a pending card has a person on it (TOK-57). */
+  name: text("name"),
   ...timestamps,
 }, (table) => [
   uniqueIndex("invites_token_idx").on(table.token),
@@ -347,6 +357,13 @@ export const formSubmissions = pgTable("form_submissions", {
 export const resources = pgTable("resources", {
   id: uuid("id").primaryKey(),
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  /**
+   * Whose handout this is (TOK-70). `null` means the practice wrote it and everyone in
+   * the workspace sees it; a user id means it is written in that person's first-person
+   * voice and only she has it in her library. Without this, an agency's second doula
+   * opened her library and found the founder's named scope-of-practice handout in it.
+   */
+  ownerUserId: uuid("owner_user_id").references(() => users.id),
   title: text("title").notNull(),
   kind: text("kind").notNull().default("handout"),
   url: text("url"),
@@ -354,7 +371,7 @@ export const resources = pgTable("resources", {
   tags: text("tags").array(),
   fileObjectId: uuid("file_object_id"),
   ...timestamps,
-});
+}, (table) => [index("resources_org_owner_idx").on(table.organizationId, table.ownerUserId)]);
 
 export const resourceShares = pgTable("resource_shares", {
   id: uuid("id").primaryKey(),
@@ -504,8 +521,19 @@ export const providerProfiles = pgTable("provider_profiles", {
   slug: text("slug").notNull(),
   headline: text("headline").notNull(),
   bio: text("bio").notNull(),
+  /**
+   * Structured rates and a real service area (TOK-57). `ratesJson` is the truth — one
+   * entry per offered service with an amount in cents and an hourly/per-day/flat basis,
+   * shaped by `@/lib/provider-rates`. `serviceArea` and `ratesLabel` stay as *derived*
+   * display strings, rebuilt on every save, because `/p/[slug]` and the care-team card
+   * already read them and a second hand-typed source would drift away from the grid.
+   */
   serviceArea: text("service_area"),
   ratesLabel: text("rates_label"),
+  ratesJson: jsonb("rates_json").$type<ProviderRate[]>(),
+  serviceAreaAddress: text("service_area_address"),
+  serviceAreaZip: text("service_area_zip"),
+  travelRadiusMiles: integer("travel_radius_miles"),
   photoFileId: uuid("photo_file_id").references(() => fileObjects.id),
   published: boolean("published").notNull().default(true),
   ...timestamps,
