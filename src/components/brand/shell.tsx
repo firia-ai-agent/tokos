@@ -2,8 +2,10 @@ import Link from "next/link";
 import { logoutAction } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { isDemoMode } from "@/lib/env";
+import { SIGN_OUT_LABEL } from "@/lib/shell-chrome";
 import { shellSearchTargets } from "@/lib/shell-persona";
 import { ProviderAvatar } from "@/components/brand/avatar";
+import { ShellMobileBar } from "@/components/brand/shell-mobile";
 import { ShellNav, type ShellNavGroup, type ShellNavItem } from "@/components/brand/shell-nav";
 import {
   ShellTopBar,
@@ -124,51 +126,27 @@ export function AppShell({
                 size="sm"
                 className="h-8 w-full justify-start px-2 text-cloud/70 hover:bg-white/10 hover:text-cloud"
               >
-                Sign out
+                {SIGN_OUT_LABEL}
               </Button>
             </form>
           </div>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-40 border-b border-white/10 bg-teal-ink lg:hidden">
-            <div className="flex h-12 items-center justify-between px-4">
-              <div>
-                <p className="font-heading text-[15px] font-semibold tracking-[0.22em] text-cloud">
-                  {brand.toUpperCase()}
-                </p>
-                {brandHint ? <p className="text-[10px] text-coral">{brandHint}</p> : null}
-              </div>
-              <div className="flex items-center gap-2">
-                {personName ? (
-                  <span className="flex items-center gap-2">
-                    <ProviderAvatar
-                      name={personName}
-                      photoFileId={personPhotoFileId}
-                      size={24}
-                      tone="rail"
-                    />
-                    <span className="hidden max-w-[9rem] truncate text-[12px] font-medium text-cloud/85 sm:inline">
-                      {personName}
-                    </span>
-                  </span>
-                ) : null}
-                <form action={logoutAction}>
-                  <Button
-                    type="submit"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-cloud/80 hover:bg-white/10 hover:text-cloud"
-                  >
-                    Sign out
-                  </Button>
-                </form>
-              </div>
-            </div>
-            <div className="overflow-x-auto px-2 py-1.5">
-              <ShellNav items={nav} groups={navGroups} variant="pills" />
-            </div>
-          </header>
+          {/* The phone's whole chrome: hamburger, where you are, and the staff bell
+              (TOK-73). Identity and Sign out live in the drawer's footer, once. */}
+          <ShellMobileBar
+            brand={brand}
+            brandHint={brandHint}
+            personName={personName}
+            personMeta={personMeta}
+            personPhotoFileId={personPhotoFileId}
+            nav={nav}
+            navGroups={navGroups}
+            tone={tone}
+            notifyCount={notifyCount}
+            notifyItems={notifyItems}
+          />
 
           <ShellTopBar
             tone={tone}

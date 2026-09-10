@@ -90,7 +90,7 @@ export function shellNavGroups(
   ];
 }
 
-/** Flat nav for the mobile pill strip — the same items, in rail order. */
+/** The rail's items, flattened — for anything that wants one list rather than groups. */
 export function shellNavItems(persona: ShellPersona, orgName: string | null | undefined) {
   return shellNavGroups(persona, orgName).flatMap((group) => group.items);
 }

@@ -148,13 +148,20 @@ export default async function DoulaMessagesPage({
         selectedClientId={selected?.clientId}
       />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
+      {/* One column on a phone, two from `lg` — and `grid-cols-1` is `minmax(0,1fr)`,
+          which is the whole fix for TOK-73's sideways scroll. An implicit `auto` track
+          sizes to its content's *min-content*, and a row whose preview is `white-space:
+          nowrap` has a min-content as wide as the sentence: the card grew to 680px inside
+          a 358px page, `truncate` never got the chance to clip, and the inbox dragged the
+          document sideways. Flooring the track at zero puts the row back inside the card,
+          where the `min-w-0` chain below can do its job. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
         {/* The conversation column. Hidden behind the thread on a phone, always there on
             a desktop, and scrolling on its own so the composer beside it stays put. */}
         <section
           aria-label="Conversations"
           className={cn(
-            "rounded-xl bg-card p-1.5 ring-1 ring-teal/15 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto",
+            "min-w-0 overflow-hidden rounded-xl bg-card p-1.5 ring-1 ring-teal/15 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto",
             selected ? "hidden lg:block" : "block",
           )}
         >
@@ -169,7 +176,7 @@ export default async function DoulaMessagesPage({
 
         <section
           aria-label="Conversation"
-          className={cn("min-h-0", selected ? "block" : "hidden lg:block")}
+          className={cn("min-h-0 min-w-0", selected ? "block" : "hidden lg:block")}
         >
           {selected && emptyThread ? (
             <div className="flex min-h-0 flex-col overflow-hidden rounded-xl bg-card ring-1 ring-teal/15 lg:h-[calc(100dvh-14rem)]">
