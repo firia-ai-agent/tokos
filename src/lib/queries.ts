@@ -32,7 +32,13 @@ import {
 import { clientChrome } from "@/lib/client-brand";
 
 import { formatCents } from "@/lib/money";
-import { isOpenLeadStage, migrateStage, type PipelineStageName } from "@/lib/pipeline";
+import {
+  funnelFlagsFrom,
+  isOpenLeadStage,
+  migrateStage,
+  type FunnelFlags,
+  type PipelineStageName,
+} from "@/lib/pipeline";
 import { homeCaseloadHint, type ShellPersona } from "@/lib/shell-persona";
 import { FAMILY_AUDIENCE, familyTemplates, staffTemplates } from "@/lib/form-audience";
 import { isMissedVisit, MISSED_VISIT_STATUS } from "@/lib/calendar";
@@ -839,6 +845,14 @@ export type LeadBoardRow = {
   missedVisitCount: number;
   /** Messages this family sent that no one on staff has opened (TOK-58). */
   unreadInboundCount: number;
+  /**
+   * Fit, payment, signature and consult-date, for this family (TOK-72).
+   *
+   * The kanban's Move-to control asks `canTransition` with these, so it can only offer
+   * stages `setPipelineStage` would accept. Reduced through `funnelFlagsFrom` — the same
+   * function `getFunnelFlags` uses on the family record.
+   */
+  flags: FunnelFlags;
 };
 
 export async function leadBoard(
@@ -998,12 +1012,44 @@ export async function leadBoard(
   const ledgers = clientLedgers(invoiceRows, contractRows);
   const emptyLedger: ClientLedger = { outstandingCents: 0, unsignedCents: 0, clearedCents: 0 };
 
+  // Funnel flags per family (TOK-72). The kanban's Move-to control has to know which
+  // stages `setPipelineStage` would actually accept, for every family at once, so the
+  // flags are reduced here from the contract and invoice rows already in memory plus one
+  // scoped read of the payment statuses — through `funnelFlagsFrom`, the same function
+  // `getFunnelFlags` uses, so the board and the family record cannot disagree.
+  const contractIds = contractRows.map((row) => row.id);
+  const paymentRows = contractIds.length
+    ? await db
+        .select({ contractId: paymentStatuses.contractId, status: paymentStatuses.status })
+        .from(paymentStatuses)
+        .where(
+          and(
+            eq(paymentStatuses.organizationId, organizationId),
+            inArray(paymentStatuses.contractId, contractIds),
+          ),
+        )
+    : [];
+  const paymentOf = new Map(paymentRows.map((row) => [row.contractId, row]));
+  const invoiceOfContract = new Map(
+    invoiceRows.filter((row) => row.contractId).map((row) => [row.contractId as string, row]),
+  );
+  // The latest contract per family, matching what `getFunnelFlags` looks at: an older
+  // voided draft must not make a family read as signed.
+  const latestContractOf = new Map<string, (typeof contractRows)[number]>();
+  for (const contract of contractRows) {
+    const held = latestContractOf.get(contract.clientId);
+    if (!held || contract.createdAt > held.createdAt) {
+      latestContractOf.set(contract.clientId, contract);
+    }
+  }
+
   // A family can carry more than one engagement row; the board wants her once, with a
   // primary if any engagement names one.
   const byClient = new Map<string, LeadBoardRow>();
   for (const row of rows) {
     const existing = byClient.get(row.client.id);
     if (existing && !row.primaryDoulaUserId) continue;
+    const contract = latestContractOf.get(row.client.id);
     byClient.set(row.client.id, {
       client: row.client,
       // A missing pipeline row is a data accident, not a new stage; legacy values are
@@ -1019,6 +1065,13 @@ export async function leadBoard(
       incompleteFormCount: incompleteFormsOf.get(row.client.id) ?? 0,
       missedVisitCount: missedVisitsOf.get(row.client.id) ?? 0,
       unreadInboundCount: unreadInboundOf.get(row.client.id) ?? 0,
+      flags: funnelFlagsFrom({
+        fitConfirmedAt: row.fitConfirmedAt,
+        consultDate: row.client.consultDate,
+        contract,
+        payment: contract ? paymentOf.get(contract.id) : null,
+        invoice: contract ? invoiceOfContract.get(contract.id) : null,
+      }),
     });
   }
 

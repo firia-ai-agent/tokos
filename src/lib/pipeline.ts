@@ -18,6 +18,8 @@
  * tells the UI when to ask first.
  */
 
+import { isPaymentCleared } from "@/lib/payment";
+
 export const PIPELINE_STAGES = [
   "new_lead",
   "outreach_sent",
@@ -182,6 +184,40 @@ export type FunnelFlags = {
    */
   consultDateSet?: boolean;
 };
+
+/**
+ * The four flags, read off rows a caller already has in memory (TOK-72).
+ *
+ * `getFunnelFlags` reads one family at a time, which is the right shape for a family
+ * record and the wrong one for a board: the kanban has to know, for forty families at
+ * once, which stages a move is actually allowed to land on — otherwise the Move-to
+ * dropdown offers stages the server will refuse. So the derivation moves here, pure, and
+ * both the single read and the bulk read reduce through it. One rule set; the board and
+ * the record cannot disagree about whether a move is legal.
+ *
+ * `contract`, `payment` and `invoice` are the latest ones for the family, matching what
+ * `getFunnelFlags` looks at — not "any contract ever", which would call a family signed
+ * off a voided draft.
+ */
+export function funnelFlagsFrom(input: {
+  fitConfirmedAt?: Date | null;
+  /** Anything truthy on `clients.consultDate`. A date is a date; the value is not read. */
+  consultDate?: unknown;
+  contract?: { status?: string | null; signedAt?: Date | null } | null;
+  payment?: { status?: string | null } | null;
+  invoice?: { status?: string | null } | null;
+}): FunnelFlags {
+  return {
+    fitConfirmed: Boolean(input.fitConfirmedAt),
+    consultDateSet: Boolean(input.consultDate),
+    paymentCleared: isPaymentCleared({
+      paymentStatus: input.payment?.status,
+      invoiceStatus: input.invoice?.status,
+    }),
+    agreementSigned:
+      Boolean(input.contract?.signedAt) || input.contract?.status === "signed",
+  };
+}
 
 export type TransitionResult =
   | { ok: true; to: PipelineStageName; requiresConfirm: boolean }

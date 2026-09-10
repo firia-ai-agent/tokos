@@ -46,10 +46,12 @@ export type LeadRowLike = {
   primaryDoulaUserId: string | null;
   lastNoteAt: Date | null;
   /**
-   * Open invoices and unsigned agreements, in cents (TOK-53). Optional so a test can
-   * still build a row by hand; absent simply means "no money is waiting on this family".
+   * Open invoices, unsigned agreements and cleared money, in cents (TOK-53). Optional so
+   * a test can still build a row by hand; absent simply means "no money is waiting on
+   * this family". `clearedCents` is what a dense card falls back to once nothing is
+   * outstanding — the rules never read it, `moneyFact` does (TOK-72).
    */
-  ledger?: { outstandingCents?: number; unsignedCents?: number };
+  ledger?: { outstandingCents?: number; unsignedCents?: number; clearedCents?: number };
   /**
    * The three counted facts behind TOK-58's new rules — family forms still open, visits
    * that came and went unresolved, and messages the family sent that nobody has read.

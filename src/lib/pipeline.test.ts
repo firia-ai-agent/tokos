@@ -8,6 +8,7 @@ import {
   canEnterContractComplete,
   canTransition,
   clientStageLabel,
+  funnelFlagsFrom,
   CLIENT_STAGE_LABELS,
   isOpenLeadStage,
   isOpenStage,
@@ -412,6 +413,8 @@ describe("no doula surface hardcodes stage vocabulary", () => {
     ["src", "app", "(doula)", "doula", "page.tsx"],
     ["src", "app", "(doula)", "doula", "clients", "page.tsx"],
     ["src", "app", "(doula)", "doula", "clients", "[id]", "page.tsx"],
+    ["src", "app", "(doula)", "doula", "clients", "lead-queue.tsx"],
+    ["src", "components", "brand", "pipeline-board.tsx"],
   ];
 
   for (const parts of DOULA_PAGES) {
@@ -426,4 +429,50 @@ describe("no doula surface hardcodes stage vocabulary", () => {
       expect(source).not.toMatch(/[^f]stageLabel\(/);
     });
   }
+});
+
+describe("funnelFlagsFrom — one reduction for the record and the board (TOK-72)", () => {
+  it("reads nothing as nothing rather than as confirmed", () => {
+    expect(funnelFlagsFrom({})).toEqual({
+      fitConfirmed: false,
+      consultDateSet: false,
+      paymentCleared: false,
+      agreementSigned: false,
+    });
+  });
+
+  it("takes the fit off the timestamp and the consult date off any value at all", () => {
+    const flags = funnelFlagsFrom({
+      fitConfirmedAt: new Date("2026-09-01T12:00:00Z"),
+      consultDate: "2026-09-14",
+    });
+    expect(flags.fitConfirmed).toBe(true);
+    expect(flags.consultDateSet).toBe(true);
+  });
+
+  it("counts a signature, whether it arrived as a timestamp or as a status", () => {
+    expect(funnelFlagsFrom({ contract: { signedAt: new Date(), status: "sent" } }).agreementSigned).toBe(true);
+    expect(funnelFlagsFrom({ contract: { signedAt: null, status: "signed" } }).agreementSigned).toBe(true);
+    expect(funnelFlagsFrom({ contract: { signedAt: null, status: "sent" } }).agreementSigned).toBe(false);
+  });
+
+  it("only calls money cleared when `isPaymentCleared` does — a refund is not revenue", () => {
+    expect(funnelFlagsFrom({ payment: { status: "cleared" } }).paymentCleared).toBe(true);
+    expect(funnelFlagsFrom({ invoice: { status: "paid" } }).paymentCleared).toBe(true);
+    expect(
+      funnelFlagsFrom({ payment: { status: "refunded" }, invoice: { status: "paid" } })
+        .paymentCleared,
+    ).toBe(false);
+    expect(funnelFlagsFrom({ invoice: { status: "open" } }).paymentCleared).toBe(false);
+  });
+
+  it("agrees with the complete rule it feeds", () => {
+    const flags = funnelFlagsFrom({
+      fitConfirmedAt: new Date(),
+      contract: { signedAt: new Date(), status: "signed" },
+      invoice: { status: "paid" },
+    });
+    expect(canEnterContractComplete(flags)).toBe(true);
+    expect(canTransition("agreement_signed", "complete", flags).ok).toBe(true);
+  });
 });

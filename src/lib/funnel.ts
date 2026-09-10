@@ -29,6 +29,7 @@ import {
   canEnterAgreementSigned,
   canSendContract,
   canTransition,
+  funnelFlagsFrom,
   isStage,
   migrateStage,
   plannedHops,
@@ -36,7 +37,7 @@ import {
   type PipelineStageName,
 } from "@/lib/pipeline";
 import { AI_NOTE_SOURCES, type AiNoteSource } from "@/lib/lead-fields";
-import { isPaymentCleared, paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
+import { paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
 import { dueDateFrom, nextInvoiceNumber } from "@/lib/invoice-dashboard";
 import { assertSlotOpen } from "@/lib/calendar";
 import { appUrl } from "@/lib/env";
@@ -101,15 +102,15 @@ export async function getFunnelFlags(
     // read as their canonical stage here so every rule downstream sees one vocabulary.
     stage: migrateStage(pipeline.stage, { fitConfirmed: Boolean(pipeline.fitConfirmedAt) }),
     enteredAt: pipeline.enteredAt,
-    flags: {
-      fitConfirmed: Boolean(pipeline.fitConfirmedAt),
-      consultDateSet: Boolean(client?.consultDate),
-      paymentCleared: isPaymentCleared({
-        paymentStatus: payment?.status,
-        invoiceStatus: invoice?.status,
-      }),
-      agreementSigned: Boolean(contract?.signedAt) || contract?.status === "signed",
-    },
+    // The reduction is `funnelFlagsFrom` (TOK-72), shared with the board's bulk read, so
+    // a move the kanban offers is a move this function would also allow.
+    flags: funnelFlagsFrom({
+      fitConfirmedAt: pipeline.fitConfirmedAt,
+      consultDate: client?.consultDate,
+      contract,
+      payment,
+      invoice,
+    }),
     contractId: contract?.id,
     invoiceId: invoice?.id,
   };
