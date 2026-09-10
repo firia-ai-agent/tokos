@@ -138,6 +138,40 @@ export function isFiltered(query: LeadQuery): boolean {
 }
 
 /**
+ * The secondary filters — everything behind "More filters" (TOK-66).
+ *
+ * Named as data rather than as a boolean expression in the page, because two places have
+ * to agree about it: whether the panel opens, and how many narrowings its summary admits
+ * to. A panel that says "More filters · 2" while showing nothing selected is worse chrome
+ * than no count at all.
+ */
+export const SECONDARY_FILTER_KEYS = [
+  "insurance",
+  "eddMonth",
+  "owner",
+  "source",
+  "overdue",
+  "unmatched",
+  "unreviewed",
+] as const satisfies ReadonlyArray<keyof LeadQuery>;
+
+/** How many secondary filters are narrowing the board right now. Zero on a clean URL. */
+export function secondaryFilterCount(query: LeadQuery): number {
+  return SECONDARY_FILTER_KEYS.filter((key) => Boolean(query[key])).length;
+}
+
+/**
+ * Does the second filter row open on load?
+ *
+ * Only when something inside it is already narrowing the view. On a clean URL the answer
+ * is no, and that is the whole of TOK-66: a permanently expanded panel of seven controls
+ * is chrome charged to every visit for the benefit of the rare one that needs it.
+ */
+export function moreFiltersOpen(query: LeadQuery): boolean {
+  return secondaryFilterCount(query) > 0;
+}
+
+/**
  * A board row read as a Needs Attention input.
  *
  * Exported because the board, the bell, Home and the clients list all have to ask the

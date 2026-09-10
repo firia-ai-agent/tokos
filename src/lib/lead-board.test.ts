@@ -6,8 +6,10 @@ import {
   isFiltered,
   leadBoardCounts,
   leadBoardView,
+  moreFiltersOpen,
   ownerOptions,
   parseLeadQuery,
+  secondaryFilterCount,
   sortLeadRows,
   type LeadRowLike,
 } from "./lead-board";
@@ -248,5 +250,36 @@ describe("filter option lists come from the rows on screen", () => {
     expect(ownerOptions(rows, (id) => (id === "maya" ? "Maya Chen" : null))).toEqual([
       { value: "maya", label: "Maya Chen" },
     ]);
+  });
+});
+
+describe("more filters (TOK-66)", () => {
+  it("stays closed on a clean URL — the whole of the ship bar", () => {
+    expect(moreFiltersOpen(parseLeadQuery({}))).toBe(false);
+    expect(secondaryFilterCount(parseLeadQuery({}))).toBe(0);
+  });
+
+  it("stays closed for the primary filters, which live outside the panel", () => {
+    const query = parseLeadQuery({ tab: "attention", q: "rivera", stage: "fit_confirmed", service: "birth" });
+    expect(moreFiltersOpen(query)).toBe(false);
+  });
+
+  it("opens itself only when something inside it is already narrowing the board", () => {
+    for (const params of [
+      { insurance: "commercial" },
+      { eddMonth: "2026-10" },
+      { owner: "u-1" },
+      { source: "referral" },
+      { overdue: "1" },
+      { unmatched: "1" },
+      { unreviewed: "1" },
+    ]) {
+      expect(moreFiltersOpen(parseLeadQuery(params))).toBe(true);
+    }
+  });
+
+  it("counts what is on, so the summary cannot claim a narrowing that is not there", () => {
+    expect(secondaryFilterCount(parseLeadQuery({ overdue: "1", owner: "u-1" }))).toBe(2);
+    expect(secondaryFilterCount(parseLeadQuery({ overdue: "0" }))).toBe(0);
   });
 });

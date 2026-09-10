@@ -32,6 +32,12 @@ import { cn } from "@/lib/utils";
  *
  * No stage string is written in this file, and no colour: labels arrive worded for the
  * persona, urgency arrives as `edgeClass` from the shared density module.
+ *
+ * Below `lg` the same board stacks (TOK-76). A kanban is a desktop shape — five columns
+ * side by side on a 390px phone is a horizontal scrollbar and a thumb hunting for it — so
+ * the columns become full-width sections down the page, each still headed by its stage
+ * and its count, and each card still carrying the Move-to control that does the work.
+ * Drag stays a desktop affordance; it was never the only way to move a family.
  */
 
 const MONEY_TONE: Record<MoneyTone, string> = {
@@ -82,7 +88,7 @@ export function PipelineBoard({
     <div
       aria-busy={pending}
       className={cn(
-        "flex min-h-0 flex-1 gap-2.5 overflow-x-auto pb-2",
+        "flex min-h-0 flex-1 flex-col gap-2.5 pb-2 lg:flex-row lg:overflow-x-auto",
         pending && "opacity-70",
       )}
     >
@@ -90,6 +96,7 @@ export function PipelineBoard({
         const target = dropTarget(column.stage);
         const droppable = Boolean(target);
         const isOver = droppable && overStage === column.stage;
+        const isEmpty = column.cards.length === 0;
 
         return (
           <section
@@ -109,7 +116,7 @@ export function PipelineBoard({
               move(dragged, target);
             }}
             className={cn(
-              "flex w-[258px] shrink-0 flex-col rounded-xl bg-teal/[0.06] ring-1 transition-colors",
+              "flex w-full flex-col rounded-xl bg-teal/[0.06] ring-1 transition-colors lg:w-[258px] lg:shrink-0",
               isOver ? "bg-teal/[0.12] ring-teal/40" : "ring-teal/10",
               dragged && !droppable && "opacity-45",
             )}
@@ -125,8 +132,17 @@ export function PipelineBoard({
               </span>
             </header>
 
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2.5 py-2.5">
-              {column.cards.length === 0 ? (
+            {/* Stacked, the body grows with its cards; as a column it scrolls inside a
+                fixed height so the board never grows the page. An empty column earns its
+                hint beside full ones — stacked down a phone it is ten paragraphs of
+                "nothing here yet", so the header and its zero say it instead. */}
+            <div
+              className={cn(
+                "space-y-2 px-2.5 py-2.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto",
+                isEmpty && "max-lg:hidden",
+              )}
+            >
+              {isEmpty ? (
                 <p className="rounded-lg border border-dashed border-teal/20 px-2.5 py-3 text-[11.5px] leading-snug text-muted-foreground">
                   {column.emptyHint}
                 </p>

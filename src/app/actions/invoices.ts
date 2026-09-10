@@ -4,10 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { clients, invoiceLines, invoices, organizations } from "@/db/schema";
+import { clients, invoiceLines, invoices, organizations, paymentStatuses } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { sanitizeBrand } from "@/lib/brand";
 import { markInvoicePaid } from "@/lib/funnel";
+import { appUrl } from "@/lib/env";
+import { enqueueEmail } from "@/lib/outbox";
 import { newId } from "@/lib/ids";
 import {
   DEFAULT_PAYMENT_TERM_DAYS,
@@ -20,6 +22,28 @@ import {
 import { requireStaff, requireStaffManager } from "@/lib/tenancy";
 
 const INVOICES_PATH = "/doula/invoices";
+
+/**
+ * Where a money action returns to (TOK-77).
+ *
+ * These actions grew up on `/doula/invoices` and always bounced back to it. The family
+ * record now fires the same ones, and landing a doula on the ledger after she marked one
+ * invoice paid from a family's page is the small rudeness that makes people stop using
+ * the button. The form declares where it came from; an absent `returnClientId` keeps the
+ * dashboard's existing behaviour exactly.
+ *
+ * The id is pasted into a URL, so it is filtered rather than trusted — a hand-rolled POST
+ * does not get to choose where the browser goes next.
+ */
+function moneyRedirect(returnClientId: string, key: "saved" | "error", value: string): string {
+  const id = returnClientId.replace(/[^a-zA-Z0-9-]/g, "");
+  if (id) return `/doula/clients/${id}?money=${value}#money`;
+  return `${INVOICES_PATH}?${key}=${value}`;
+}
+
+function readReturnClientId(formData: FormData): string {
+  return String(formData.get("returnClientId") ?? "").trim();
+}
 
 /** Every surface that counts this money has to move when one invoice does. */
 function revalidateMoney(clientId: string) {
@@ -121,6 +145,7 @@ export async function recordExternalPaymentAction(formData: FormData) {
   const staff = await requireStaff();
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   const reference = String(formData.get("reference") ?? "").trim().slice(0, 120);
+  const returnClientId = readReturnClientId(formData);
 
   const db = getDb();
   const [invoice] = await db
@@ -128,9 +153,9 @@ export async function recordExternalPaymentAction(formData: FormData) {
     .from(invoices)
     .where(and(eq(invoices.id, invoiceId), eq(invoices.organizationId, staff.organizationId)))
     .limit(1);
-  if (!invoice) redirect(`${INVOICES_PATH}?error=missing`);
+  if (!invoice) redirect(moneyRedirect(returnClientId, "error", "missing"));
   if (invoiceCleared({ status: invoice.status, paymentStatus: null })) {
-    redirect(`${INVOICES_PATH}?error=cleared`);
+    redirect(moneyRedirect(returnClientId, "error", "cleared"));
   }
 
   await markInvoicePaid({
@@ -151,7 +176,65 @@ export async function recordExternalPaymentAction(formData: FormData) {
   });
 
   revalidateMoney(invoice.clientId);
-  redirect(`${INVOICES_PATH}?saved=recorded`);
+  redirect(moneyRedirect(returnClientId, "saved", "recorded"));
+}
+
+/**
+ * Nudges a family about an invoice that is still owed (TOK-77).
+ *
+ * "Chase payment" is the verb a doula reaches for on a family record, and before this it
+ * did not exist anywhere in the product — the only reminder that ever went out was the
+ * one `sendContract` enqueued the day the invoice was raised. This re-sends *that* email,
+ * the org's own `invoice_due` template, rather than inventing a second reminder voice or
+ * a dunning schedule nobody asked for.
+ *
+ * A settled or cancelled invoice is refused rather than quietly re-sent: the failure mode
+ * here is a family who has already paid being asked again, and that is worse than a
+ * button that says no.
+ */
+export async function chaseInvoiceAction(formData: FormData) {
+  const staff = await requireStaff();
+  const invoiceId = String(formData.get("invoiceId") ?? "").trim();
+  const returnClientId = readReturnClientId(formData);
+
+  const db = getDb();
+  const [row] = await db
+    .select({ invoice: invoices, paymentStatus: paymentStatuses.status, client: clients })
+    .from(invoices)
+    .leftJoin(paymentStatuses, eq(paymentStatuses.contractId, invoices.contractId))
+    .innerJoin(clients, eq(clients.id, invoices.clientId))
+    .where(and(eq(invoices.id, invoiceId), eq(invoices.organizationId, staff.organizationId)))
+    .limit(1);
+  if (!row) redirect(moneyRedirect(returnClientId, "error", "missing"));
+
+  // The payment row is the one that touched the money, so it decides whether anything is
+  // still owed — the same read the badge on the card does (TOK-48).
+  if (invoiceCleared({ status: row.invoice.status, paymentStatus: row.paymentStatus })) {
+    redirect(moneyRedirect(returnClientId, "error", "cleared"));
+  }
+
+  await enqueueEmail({
+    organizationId: staff.organizationId,
+    triggerKey: "invoice_due",
+    toEmail: row.client.email,
+    vars: {
+      client_name: row.client.preferredName || row.client.displayName,
+      portal_url: `${appUrl()}/portal/pay`,
+      invoice_number: row.invoice.number,
+    },
+  });
+
+  await writeAudit({
+    organizationId: staff.organizationId,
+    actorUserId: staff.userId,
+    action: "invoice.chased",
+    entityType: "invoice",
+    entityId: row.invoice.id,
+    metadata: { number: row.invoice.number },
+  });
+
+  revalidateMoney(row.invoice.clientId);
+  redirect(moneyRedirect(returnClientId, "saved", "chased"));
 }
 
 /**

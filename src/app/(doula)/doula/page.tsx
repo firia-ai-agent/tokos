@@ -42,13 +42,13 @@ function FamilyRow({ card, reasons }: { card: FamilyCard; reasons?: boolean }) {
       )}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <p className="truncate text-[14px] font-semibold text-teal-ink">{card.name}</p>
+        <p className="min-w-0 truncate text-[14px] font-semibold text-teal-ink">{card.name}</p>
         <span className="shrink-0 rounded-md bg-teal/10 px-2 py-0.5 text-[11px] font-semibold text-teal-ink">
           {card.stageLabel}
         </span>
       </div>
       <div className="mt-1 flex items-baseline justify-between gap-2">
-        <p className="truncate text-[12.5px] leading-snug text-muted-foreground">
+        <p className="min-w-0 truncate text-[12.5px] leading-snug text-muted-foreground">
           {card.facts.join(" · ")}
         </p>
         {/* Money is never the fact that gets truncated away. */}
@@ -187,10 +187,15 @@ export default async function DoulaHomePage() {
         ))}
       </section>
 
+      {/* The `min-w-0` and the explicit `grid-cols-1` on the row list below are both
+          load-bearing (TOK-76): a grid track defaults to its items' max-content width, so
+          one long fact line in a Needs-attention row would otherwise widen the column past
+          the viewport and drag the whole page sideways — with the `truncate` inside it
+          never firing, because there was nothing left to truncate against. */}
       <section className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
         {/* Needs attention — rule-generated, one row per family, name once and a short
             list of reasons. Clicking a row opens that family. */}
-        <article className="rounded-xl bg-card ring-1 ring-teal/15">
+        <article className="min-w-0 rounded-xl bg-card ring-1 ring-teal/15">
           <div className="flex items-center justify-between gap-3 rounded-t-xl bg-teal-ink px-4 py-2.5">
             <div className="min-w-0">
               <h2 className="font-heading text-[17px] leading-tight text-cloud">Needs attention</h2>
@@ -210,7 +215,7 @@ export default async function DoulaHomePage() {
               Nothing queued — every open record has a follow-up, a doula, and a review.
             </p>
           ) : (
-            <ul className="grid gap-1.5 p-2">
+            <ul className="grid grid-cols-1 gap-1.5 p-2">
               {attentionCards.map((card) => (
                 <li key={card.id}>
                   <FamilyRow card={card} reasons />
@@ -220,7 +225,7 @@ export default async function DoulaHomePage() {
           )}
         </article>
 
-        <div className="grid gap-3 content-start">
+        <div className="grid min-w-0 gap-3 content-start">
           {/* Cleared trend — real paid invoices only; no invented rails/claims */}
           <article className="rounded-xl bg-card p-4 ring-1 ring-teal/15">
             <div className="flex items-baseline justify-between gap-3">

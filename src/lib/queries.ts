@@ -12,6 +12,7 @@ import {
   emailTemplateVersions,
   emailTemplates,
   engagements,
+  esignArtifacts,
   formAssignments,
   formSubmissions,
   formTemplates,
@@ -1152,6 +1153,92 @@ export async function leadNotes(organizationId: string, clientId: string) {
     ...row,
     actorName: row.actorUserId ? (nameOf.get(row.actorUserId) ?? null) : null,
   }));
+}
+
+/**
+ * The stage log for one family, with the name of whoever moved it (TOK-77).
+ *
+ * `stageHistory` below answers "when did this record reach each stage" for the stepper
+ * and deliberately reads two columns. The log is a different question — *who* and *why* —
+ * and it was the missing half: the page used to select the raw event rows and print a
+ * date and an arrow, which is an audit trail with the audit taken out.
+ *
+ * The actor join follows `leadNotes`: one extra read for the handful of ids on the
+ * record, rather than a join that fans the event query out per row.
+ */
+export async function stageLogEvents(organizationId: string, clientId: string) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: pipelineEvents.id,
+      fromStage: pipelineEvents.fromStage,
+      toStage: pipelineEvents.toStage,
+      reason: pipelineEvents.reason,
+      at: pipelineEvents.at,
+      actorUserId: pipelineEvents.actorUserId,
+    })
+    .from(pipelineEvents)
+    .where(
+      and(eq(pipelineEvents.organizationId, organizationId), eq(pipelineEvents.clientId, clientId)),
+    )
+    .orderBy(desc(pipelineEvents.at));
+
+  const actorIds = [...new Set(rows.map((row) => row.actorUserId).filter(Boolean))] as string[];
+  const actors = actorIds.length
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, actorIds))
+    : [];
+  const nameOf = new Map(actors.map((row) => [row.id, row.name]));
+
+  return rows.map((row) => ({
+    ...row,
+    actorName: row.actorUserId ? (nameOf.get(row.actorUserId) ?? null) : null,
+  }));
+}
+
+/**
+ * One family's money, shaped for the record's Contracts & invoices card (TOK-77).
+ *
+ * Both halves carry the row the *other* table needs to be read honestly: a contract
+ * carries its e-sign artifact, so "Open agreement" knows whether there is a document to
+ * open, and an invoice carries `payment_statuses.status`, so "Paid" here is gated on the
+ * same two columns the ledger and the family's pay page read (TOK-48). Reading the
+ * invoice without the payment row is what let a declined card render as settled.
+ */
+export async function familyMoneyRows(organizationId: string, clientId: string) {
+  const db = getDb();
+  const contractRows = await db
+    .select({
+      id: contracts.id,
+      packageLabel: contracts.packageLabel,
+      amountCents: contracts.amountCents,
+      currency: contracts.currency,
+      status: contracts.status,
+      sentAt: contracts.sentAt,
+      signedAt: contracts.signedAt,
+      documentUrl: esignArtifacts.documentUrl,
+      provider: esignArtifacts.provider,
+    })
+    .from(contracts)
+    .leftJoin(esignArtifacts, eq(esignArtifacts.contractId, contracts.id))
+    .where(and(eq(contracts.organizationId, organizationId), eq(contracts.clientId, clientId)))
+    .orderBy(desc(contracts.createdAt));
+
+  const invoiceRows = await db
+    .select({
+      id: invoices.id,
+      number: invoices.number,
+      status: invoices.status,
+      paymentStatus: paymentStatuses.status,
+      amountCents: invoices.amountCents,
+      currency: invoices.currency,
+      dueAt: invoices.dueAt,
+    })
+    .from(invoices)
+    .leftJoin(paymentStatuses, eq(paymentStatuses.contractId, invoices.contractId))
+    .where(and(eq(invoices.organizationId, organizationId), eq(invoices.clientId, clientId)))
+    .orderBy(desc(invoices.createdAt));
+
+  return { contracts: contractRows, invoices: invoiceRows };
 }
 
 /**

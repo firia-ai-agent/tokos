@@ -6,6 +6,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   calendarEvents,
+  contracts,
+  esignArtifacts,
   portalMessages,
   portalThreadPins,
   providerProfiles,
@@ -19,6 +21,8 @@ import {
 } from "@/lib/funnel";
 import { TIME_OFF_TYPE, organizationTimezone, parseAvailabilityWindow } from "@/lib/calendar";
 import { parseTimeOffRange } from "@/lib/calendar-grid";
+import { writeAudit } from "@/lib/audit";
+import { familySignUrl, isLiveContract, isUnsignedContract } from "@/lib/family-money";
 import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
 import { requireStaff, requireStaffClient } from "@/lib/tenancy";
@@ -77,6 +81,68 @@ export async function sendContractAction(clientId: string) {
   });
   revalidatePath("/doula");
   revalidatePath("/portal");
+}
+
+/**
+ * Sends the family's copy of an agreement she has not signed yet (TOK-77).
+ *
+ * The staff-side "Open agreement" view shows what went out and when; this is the verb
+ * beside it. It re-enqueues the org's own `agreement_sent` template with the same signing
+ * link the first email carried, rather than cutting a second contract — an unsigned
+ * agreement does not need replacing, it needs re-sending.
+ *
+ * A signed or voided contract is refused: nothing good comes of a family being asked to
+ * sign an agreement she already signed.
+ */
+export async function resendAgreementAction(formData: FormData) {
+  const contractId = String(formData.get("contractId") ?? "").trim();
+  const clientId = String(formData.get("clientId") ?? "").trim();
+  const { staff, client } = await requireStaffClient(clientId);
+  const back = `/doula/clients/${client.id}`;
+
+  const db = getDb();
+  const [row] = await db
+    .select({ contract: contracts, documentUrl: esignArtifacts.documentUrl })
+    .from(contracts)
+    .leftJoin(esignArtifacts, eq(esignArtifacts.contractId, contracts.id))
+    .where(
+      and(
+        eq(contracts.id, contractId),
+        eq(contracts.organizationId, staff.organizationId),
+        eq(contracts.clientId, client.id),
+      ),
+    )
+    .limit(1);
+  if (!row) redirect(`${back}?money=missing#money`);
+  if (!isUnsignedContract(row.contract) || !isLiveContract(row.contract)) {
+    redirect(`${back}?money=signed#money`);
+  }
+
+  await enqueueEmail({
+    organizationId: staff.organizationId,
+    triggerKey: "agreement_sent",
+    toEmail: client.email,
+    vars: {
+      client_name: client.preferredName || client.displayName,
+      portal_url: `${appUrl()}/portal`,
+      sign_url: familySignUrl(
+        { id: row.contract.id, documentUrl: row.documentUrl },
+        appUrl(),
+      ),
+    },
+  });
+
+  await writeAudit({
+    organizationId: staff.organizationId,
+    actorUserId: staff.userId,
+    action: "contract.resent",
+    entityType: "contract",
+    entityId: row.contract.id,
+  });
+
+  revalidatePath(back);
+  revalidatePath("/portal");
+  redirect(`${back}?money=resent#money`);
 }
 
 export async function startCareAction(clientId: string) {

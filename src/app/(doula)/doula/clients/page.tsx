@@ -7,8 +7,10 @@ import {
   isFiltered,
   leadBoardCounts,
   leadBoardView,
+  moreFiltersOpen,
   ownerOptions,
   parseLeadQuery,
+  secondaryFilterCount,
 } from "@/lib/lead-board";
 import {
   NEEDS_ACTION_LEGEND,
@@ -122,16 +124,11 @@ export default async function ClientsPage({
   const totals = boardTotals(columns);
 
   // Open the second filter row only when something in it is already narrowing the view,
-  // so the board keeps the height rather than the filters.
-  const moreFiltersOn = Boolean(
-    query.insurance ||
-      query.eddMonth ||
-      query.owner ||
-      query.source ||
-      query.overdue ||
-      query.unmatched ||
-      query.unreviewed,
-  );
+  // so the board keeps the height rather than the filters (TOK-66). The rule is in
+  // `@/lib/lead-board` with a test on it, because "closed on a clean URL" is a ship bar
+  // and not something to re-derive by hand in a page.
+  const moreFiltersOn = moreFiltersOpen(query);
+  const secondaryCount = secondaryFilterCount(query);
 
   return (
     <div
@@ -234,6 +231,9 @@ export default async function ClientsPage({
         <details open={moreFiltersOn} className="w-full">
           <summary className="cursor-pointer text-[12px] font-semibold text-teal">
             More filters
+            {secondaryCount > 0 ? (
+              <span className="ml-1 text-muted-foreground">· {secondaryCount} on</span>
+            ) : null}
           </summary>
           <div className="mt-2.5 flex flex-wrap items-end gap-2.5">
             <FilterSelect

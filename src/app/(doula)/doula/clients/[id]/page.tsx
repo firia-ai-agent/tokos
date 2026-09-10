@@ -1,17 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { format } from "date-fns";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   clients,
-  contracts,
   engagements,
   formAssignments,
   formSubmissions,
   formTemplates,
-  invoices,
-  pipelineEvents,
   portalMessages,
   resourceShares,
   resources,
@@ -19,7 +15,14 @@ import {
 import { requireStaff } from "@/lib/tenancy";
 import { allowedDoulaActions, staffStageLabel } from "@/lib/pipeline";
 import { getFunnelFlags } from "@/lib/funnel";
-import { clientSendOptions, leadNotes, stageHistory, teamRoster } from "@/lib/queries";
+import {
+  clientSendOptions,
+  familyMoneyRows,
+  leadNotes,
+  stageHistory,
+  stageLogEvents,
+  teamRoster,
+} from "@/lib/queries";
 import { canManageTeam, roleLabel } from "@/lib/team";
 import { shellPersona } from "@/lib/shell-persona";
 import { assignPrimaryDoulaAction } from "@/app/actions/team";
@@ -31,6 +34,8 @@ import {
   setReviewedAction,
   setStageAction,
 } from "@/app/actions/leads";
+import { FamilyMoneyCard } from "@/components/brand/family-money";
+import { StageLogPanel } from "@/components/brand/stage-log";
 import { StageSelect } from "@/components/brand/stage-select";
 import { StageStepper } from "@/components/brand/stage-stepper";
 import { LeadFieldsForm, LeadNotesFeed, LeadSummary } from "@/components/brand/lead-fields";
@@ -48,7 +53,8 @@ import {
   staffThreadEmpty,
   unreadBadgeCopy,
 } from "@/lib/message-inbox";
-import { formatCents } from "@/lib/money";
+import { familyMoney, MONEY_NOTICES } from "@/lib/family-money";
+import { stageLog, stageStory } from "@/lib/stage-log";
 import {
   confirmFitAction,
   markClientMessagesReadAction,
@@ -84,11 +90,19 @@ export default async function ClientDetailPage({
     formsError?: string;
     resourcesShared?: string;
     resourcesError?: string;
+    money?: string;
   }>;
 }) {
   const { id } = await params;
-  const { stageError, formsSent, formsError, resourcesShared, resourcesError } =
-    await searchParams;
+  // `money` is the notice a money action redirects back with (TOK-77): `?money=recorded`.
+  const {
+    stageError,
+    formsSent,
+    formsError,
+    resourcesShared,
+    resourcesError,
+    money: moneyNotice,
+  } = await searchParams;
   const staff = await requireStaff();
   const db = getDb();
   const [client] = await db
@@ -134,22 +148,10 @@ export default async function ClientDetailPage({
   const roster = await teamRoster(staff.organizationId);
   const manages = canManageTeam(staff.membershipRole);
   const primary = roster.find((member) => member.userId === engagement?.primaryDoulaUserId);
-  const events = await db
-    .select()
-    .from(pipelineEvents)
-    .where(
-      and(eq(pipelineEvents.organizationId, staff.organizationId), eq(pipelineEvents.clientId, client.id)),
-    )
-    .orderBy(desc(pipelineEvents.at));
-  const contractRows = await db
-    .select()
-    .from(contracts)
-    .where(and(eq(contracts.organizationId, staff.organizationId), eq(contracts.clientId, client.id)))
-    .orderBy(desc(contracts.createdAt));
-  const invoiceRows = await db
-    .select()
-    .from(invoices)
-    .where(and(eq(invoices.organizationId, staff.organizationId), eq(invoices.clientId, client.id)));
+  // Who moved this family and why (TOK-77) — the log used to select the raw event rows
+  // and print a date and an arrow, which is an audit trail with the audit taken out.
+  const events = await stageLogEvents(staff.organizationId, client.id);
+  const ledger = await familyMoneyRows(staff.organizationId, client.id);
   const messages = await db
     .select()
     .from(portalMessages)
@@ -219,6 +221,18 @@ export default async function ClientDetailPage({
   const familyName = client.preferredName ?? client.displayName;
   // One empty state for this family, shared with the inbox pane (TOK-56).
   const threadEmpty = staffThreadEmpty(familyName);
+  const today = new Date();
+  // Both halves of TOK-77 are decided in `@/lib/*` and only rendered here, so the money
+  // verbs and the stage wording are testable without mounting the page.
+  const money = familyMoney({
+    clientId: client.id,
+    contracts: ledger.contracts,
+    invoices: ledger.invoices,
+    allowedActions: actions,
+    now: today,
+  });
+  const log = stageLog(events, { persona, now: today });
+  const story = stageStory(log);
 
   return (
     <div className="space-y-6">
@@ -315,6 +329,14 @@ export default async function ClientDetailPage({
           {/* The dropdown is the control. `setStageAction` re-checks every rule, so this
               is a convenience, not the guard. */}
           <StageSelect clientId={client.id} current={funnel.stage} action={setStageAction} />
+          {/* The current stage story, above the fold beside the control that changes it
+              (TOK-77): actor · why · when, read from the same log the history below
+              renders, so the two can never name different moves. */}
+          {story ? (
+            <p className="text-[13px] font-semibold text-teal-ink">
+              {story}
+            </p>
+          ) : null}
           <p className="text-sm text-muted-foreground">
             Fit confirmed: {funnel.flags.fitConfirmed ? "yes" : "no"} · Signed:{" "}
             {funnel.flags.agreementSigned ? "yes (intent)" : "no"} · Payment:{" "}
@@ -420,42 +442,22 @@ export default async function ClientDetailPage({
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card id="money" className="scroll-mt-24">
-          <CardHeader>
-            <CardTitle>Contracts & invoices</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {contractRows.length === 0 ? <p>No contract sent yet.</p> : null}
-            {contractRows.map((contract) => (
-              <p key={contract.id}>
-                {contract.packageLabel} · {contract.status} ·{" "}
-                {formatCents(contract.amountCents)}
-              </p>
-            ))}
-            {invoiceRows.map((invoice) => (
-              <p key={invoice.id}>
-                {invoice.number} · {invoice.status} · {formatCents(invoice.amountCents)}
-              </p>
-            ))}
-          </CardContent>
-        </Card>
+        {/* Every row on this card ends in a verb (TOK-77). What it replaced printed the
+            same three facts and offered nothing to press. */}
+        <FamilyMoneyCard
+          money={money}
+          clientId={client.id}
+          familyName={familyName}
+          notice={MONEY_NOTICES[String(moneyNotice ?? "")] ?? null}
+        />
         <Card>
           <CardHeader>
             <CardTitle>Stage log</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {/* The stepper above is the answer to "where are we"; this stays as the audit
-                trail behind it, in staff labels rather than raw codes. */}
-            {events.length === 0 ? <p className="text-muted-foreground">No moves yet.</p> : null}
-            {events.map((event) => (
-              <p key={event.id} className="text-muted-foreground">
-                {format(event.at, "MMM d")} ·{" "}
-                {event.fromStage ? staffStageLabel(persona, event.fromStage) : "—"} →{" "}
-                <span className="font-medium text-teal-ink">
-                  {staffStageLabel(persona, event.toStage)}
-                </span>
-              </p>
-            ))}
+            {/* Collapsed by default: the stepper and the story line above already answer
+                "where are we" and "what moved last". This is the trail behind them. */}
+            <StageLogPanel log={log} />
           </CardContent>
         </Card>
       </div>

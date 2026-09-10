@@ -99,8 +99,11 @@ export default async function InvoicesPage({
           top right exactly as the reference sets it out. Paid is `isPaymentCleared`. */}
       <section className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
         {kpis.map((kpi) => (
-          <article key={kpi.key} className="rounded-xl bg-cloud px-3.5 py-3 ring-1 ring-teal/15">
-            <div className="flex items-start justify-between gap-2">
+          <article key={kpi.key} className="min-w-0 rounded-xl bg-cloud px-3.5 py-3 ring-1 ring-teal/15">
+            {/* Wraps rather than overflows (TOK-76): two Fraunces money figures and a
+                count badge do not fit side by side in half a phone, and the badge is the
+                one that may drop to its own line. */}
+            <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
               <p
                 className={cn(
                   "font-heading text-[26px] font-semibold leading-none tracking-[-0.01em] tabular-nums",
@@ -140,7 +143,16 @@ export default async function InvoicesPage({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Below `lg` the ledger is a card list, not a 52rem table dragged sideways
+              (TOK-76). Same rows, same actions, same terracotta edge for late — a phone
+              gets the ledger, not a scrollbar. */}
+          <ul className="divide-y divide-teal/10 lg:hidden">
+            {visible.map((invoice) => (
+              <InvoiceCard key={invoice.id} invoice={invoice} now={now} />
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto lg:block">
             <table className="w-full min-w-[52rem] border-collapse text-left">
               <thead>
                 <tr className="bg-cloud">
@@ -165,6 +177,7 @@ export default async function InvoicesPage({
               </tbody>
             </table>
           </div>
+          </>
         )}
 
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-teal/12 bg-cloud/60 px-3.5 py-2.5">
@@ -201,6 +214,74 @@ function PageLink({ href, disabled, label }: { href: string; disabled: boolean; 
     >
       {label}
     </Link>
+  );
+}
+
+/**
+ * The same invoice as a card, for widths where a seven-column table cannot be read
+ * (TOK-76). It carries the row's whole job: number, type, family, money, status, dates
+ * and the `⋯` menu — a narrow layout that drops the actions is just a picture of a
+ * ledger.
+ */
+function InvoiceCard({ invoice, now }: { invoice: InvoiceRecord; now: Date }) {
+  const status = staffInvoiceStatus(invoice, now);
+  const late = isOverdue(invoice, now);
+  const amount = formatCents(invoice.amountCents, invoice.currency);
+  return (
+    <li className={cn("px-3.5 py-3", late && "bg-coral/[0.04]")}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "inline-flex items-center gap-2 text-[13px] font-semibold text-teal-ink",
+              late && "before:h-4 before:w-[3px] before:rounded-full before:bg-coral",
+            )}
+          >
+            {invoice.number}
+          </p>
+          <p className="truncate text-[12.5px] text-muted-foreground">
+            {invoice.familyName}
+            {invoice.packageLabel ? ` · ${invoice.packageLabel}` : ""}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <p className="font-heading text-[15px] font-semibold tabular-nums text-teal-ink">
+            {amount}
+          </p>
+          <InvoiceRowActions
+            invoiceId={invoice.id}
+            invoiceNumber={invoice.number}
+            familyId={invoice.clientId}
+            familyName={invoice.familyName}
+            amountLabel={amount}
+            canRecordPayment={
+              !invoiceCleared(invoice) && status.label !== "Cancelled" && status.label !== "Refunded"
+            }
+          />
+        </div>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span
+          className={cn(
+            "inline-flex rounded-md px-2 py-0.5 text-[11.5px] font-semibold",
+            BADGE_TONE[status.tone],
+          )}
+        >
+          {status.label}
+        </span>
+        <span className="rounded-md bg-secondary px-2 py-0.5 text-[11.5px] font-semibold text-teal-ink">
+          {invoiceTypeLabel(invoice)}
+        </span>
+        <span
+          className={cn(
+            "text-[12px] tabular-nums",
+            late ? "font-semibold text-coral" : "text-muted-foreground",
+          )}
+        >
+          Issued {dateLabel(invoice.issuedAt)} · due {dateLabel(invoice.dueAt)}
+        </span>
+      </div>
+    </li>
   );
 }
 

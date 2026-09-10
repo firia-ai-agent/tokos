@@ -215,7 +215,10 @@ export type StaffInvoiceStatus = { label: string; tone: KpiTone };
  * the payment row says `failed` reads Payment failed. That drift is exactly the bug the
  * family view had (TOK-48); the staff view must not reintroduce it.
  */
-export function staffInvoiceStatus(row: InvoiceRecord, now: Date): StaffInvoiceStatus {
+export function staffInvoiceStatus(
+  row: Pick<InvoiceRecord, "status" | "paymentStatus" | "dueAt">,
+  now: Date,
+): StaffInvoiceStatus {
   const state = invoiceMoneyState(row, now);
   if (state === "paid") return { label: "Paid", tone: "teal" };
   if (state === "overdue") {
