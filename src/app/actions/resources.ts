@@ -8,6 +8,7 @@ import { resourceShares, resources } from "@/db/schema";
 import { writeAudit } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { requireStaff, requireStaffClient } from "@/lib/tenancy";
+import { RESOURCE_OWNER_FIELD, resourceOwnerFromForm } from "@/lib/provider-resources";
 
 const RESOURCE_KINDS = ["handout", "link", "checklist", "video"];
 
@@ -50,6 +51,8 @@ export async function createResourceAction(formData: FormData) {
   await db.insert(resources).values({
     id,
     organizationId: staff.organizationId,
+    // Hers only if she said so; otherwise the practice's, and everyone can share it.
+    ownerUserId: resourceOwnerFromForm(formData.get(RESOURCE_OWNER_FIELD), staff.userId),
     title,
     kind,
     url: url || null,

@@ -45,6 +45,7 @@ import {
   type NeedsAttentionRow,
 } from "@/lib/needs-attention";
 import { shellNotifyItems, type ShellNotifyItem } from "@/lib/home-queues";
+import { visibleResources } from "@/lib/provider-resources";
 
 export type HomeKpi = {
   label: string;
@@ -544,7 +545,11 @@ export async function formsHub(organizationId: string) {
  * means the family is already chosen, so the page needs the candidates and nothing else
  * (TOK-50 / CRM-FIRST §2A).
  */
-export async function clientSendOptions(organizationId: string, clientId: string) {
+export async function clientSendOptions(
+  organizationId: string,
+  clientId: string,
+  viewerUserId: string,
+) {
   const db = getDb();
   const [templates, library, openAssignments, existingShares] = await Promise.all([
     db
@@ -587,18 +592,33 @@ export async function clientSendOptions(organizationId: string, clientId: string
     formTemplates: familyTemplates(templates).filter(
       (template) => !openTemplateIds.has(template.id),
     ),
-    resources: library.filter((resource) => !sharedResourceIds.has(resource.id)),
+    // Same rule as the library itself (TOK-70): she can only send what is hers to send,
+    // so another doula's first-person handout is not in this picker either.
+    resources: visibleResources(library, viewerUserId).filter(
+      (resource) => !sharedResourceIds.has(resource.id),
+    ),
   };
 }
 
-/** Everything `/doula/resources` renders: the org library plus who has each item. */
-export async function resourcesHub(organizationId: string) {
+/**
+ * Everything `/doula/resources` renders: the library this viewer may see, plus who has
+ * each item.
+ *
+ * Viewer-scoped since TOK-70. The practice's own handouts belong to everyone; a handout
+ * written in one doula's first person belongs to her, and Priya opening her library used
+ * to find the founder's named scope-of-practice sheet sitting in it, ready to share into
+ * a family portal over the wrong name.
+ */
+export async function resourcesHub(organizationId: string, viewerUserId: string) {
   const db = getDb();
-  const library = await db
-    .select()
-    .from(resources)
-    .where(eq(resources.organizationId, organizationId))
-    .orderBy(asc(resources.title));
+  const library = visibleResources(
+    await db
+      .select()
+      .from(resources)
+      .where(eq(resources.organizationId, organizationId))
+      .orderBy(asc(resources.title)),
+    viewerUserId,
+  );
 
   const shares = await db
     .select({ share: resourceShares, resource: resources, client: clients })

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEMO_ACCOUNTS, demoAccount, demoLoginHintLines } from "../src/lib/demo-logins";
+import { providerHandoutTitle } from "../src/lib/provider-resources";
 
 /**
  * The seed is copy as much as it is data: its resource bodies and email templates are the
@@ -35,11 +36,45 @@ describe("seeded client copy", () => {
 
   it("gives every seeded resource a title of its own (TOK-41 G7)", () => {
     // Two handouts a family cannot tell apart in a list is the same bug as no title.
-    const titles = [...seed.matchAll(/title: "([^"]+)",\n\s+kind: "(?:handout|checklist|link)"/g)].map(
+    // Provider-named handouts are computed rather than typed (TOK-70), so they are
+    // resolved through the same helper the seed calls before the titles are compared.
+    const literal = [...seed.matchAll(/title: "([^"]+)",\n\s+kind: "(?:handout|checklist|link)"/g)].map(
       (m) => m[1],
     );
+    // The seed names its people by constant (`MAYA.name`); resolve each back to the demo
+    // account it refers to so the assertion compares the titles the product would render.
+    const named = [...seed.matchAll(/title: providerHandoutTitle\((\w+)\.name\)/g)].map((m) => {
+      const key = m[1].toLowerCase();
+      const account = DEMO_ACCOUNTS.find((row) => row.key === key);
+      expect(account, `seed references ${m[1]}, which is not a demo account`).toBeDefined();
+      return providerHandoutTitle(account?.name);
+    });
+    const titles = [...literal, ...named];
+    expect(named.length).toBeGreaterThan(1);
     expect(titles.length).toBeGreaterThan(1);
     expect(new Set(titles).size).toBe(titles.length);
+  });
+
+  it("never hardcodes one provider's name into a handout title (TOK-70)", () => {
+    // The bug this replaced: an org-wide row literally titled "What Maya does (and does
+    // not do)", which every other doula then found sitting in her own library.
+    expect(seed).not.toMatch(/title: "What \w+ does \(and does not do\)"/);
+    // Copy only — the prose above the seed's resource rows is free to explain the bug
+    // by name; what must not carry one is a string the product would render.
+    for (const line of seedStrings()) {
+      for (const account of DEMO_ACCOUNTS) {
+        const first = account.name.trim().split(/\s+/)[0];
+        expect(line).not.toContain(`What ${first} does`);
+      }
+    }
+  });
+
+  it("gives each seeded provider handout an owner, so it cannot bleed (TOK-70)", () => {
+    // Every computed title in the seed sits next to an `ownerUserId`. Without one the
+    // row is org-wide, which is exactly how the founder's handout reached Priya.
+    const blocks = [...seed.matchAll(/ownerUserId: (\w+),\n\s+title: providerHandoutTitle\(/g)];
+    const named = [...seed.matchAll(/title: providerHandoutTitle\(/g)];
+    expect(blocks.length).toBe(named.length);
   });
 
   it("keeps the birth preferences form free of the internal disclaimer (TOK-41 G5)", () => {

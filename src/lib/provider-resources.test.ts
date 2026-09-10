@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  PROVIDER_HANDOUT_FALLBACK_TITLE,
   isPersonalResource,
+  PROVIDER_HANDOUT_FALLBACK_TITLE,
   providerFirstName,
   providerHandoutBody,
   providerHandoutTitle,
+  RESOURCE_OWNER_MINE,
+  RESOURCE_OWNER_PRACTICE,
+  resourceOwnerFromForm,
   titleNamesSomeoneElse,
   visibleResources,
 } from "./provider-resources";
@@ -76,5 +79,28 @@ describe("library visibility", () => {
     expect(isPersonalResource(library[0])).toBe(true);
     expect(isPersonalResource(library[2])).toBe(false);
     expect(isPersonalResource({ id: "x", title: "x" })).toBe(false);
+  });
+});
+
+describe("ownership on the authoring form", () => {
+  it("keeps a new resource with the practice unless she says it is hers", () => {
+    expect(resourceOwnerFromForm(RESOURCE_OWNER_PRACTICE, MAYA)).toBeNull();
+    expect(resourceOwnerFromForm("", MAYA)).toBeNull();
+    expect(resourceOwnerFromForm(null, MAYA)).toBeNull();
+    expect(resourceOwnerFromForm(undefined, MAYA)).toBeNull();
+    // A posted value nobody offered is not a licence to narrow who can help a family.
+    expect(resourceOwnerFromForm("something-else", MAYA)).toBeNull();
+  });
+
+  it("gives it to the author when she does", () => {
+    expect(resourceOwnerFromForm(RESOURCE_OWNER_MINE, MAYA)).toBe(MAYA);
+    expect(resourceOwnerFromForm(` ${RESOURCE_OWNER_MINE} `, PRIYA)).toBe(PRIYA);
+  });
+
+  it("round-trips: a handout authored as hers never reaches the other doula", () => {
+    const owner = resourceOwnerFromForm(RESOURCE_OWNER_MINE, PRIYA);
+    const library = [{ id: "new", title: providerHandoutTitle("Priya Raman"), ownerUserId: owner }];
+    expect(visibleResources(library, MAYA)).toEqual([]);
+    expect(visibleResources(library, PRIYA)).toHaveLength(1);
   });
 });

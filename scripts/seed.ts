@@ -40,6 +40,11 @@ import {
   demoLoginHintLines,
 } from "../src/lib/demo-logins";
 import { saveProviderPhoto } from "../src/lib/provider-photo";
+import {
+  PROVIDER_HANDOUT_TAGS,
+  providerHandoutBody,
+  providerHandoutTitle,
+} from "../src/lib/provider-resources";
 import { CHART_AUDIT_ACTIONS, CHART_ENTITY_TYPES, chartAuditMetadata } from "../src/lib/chart/audit-actions";
 import { parseChartAnswers } from "../src/lib/chart/schemas";
 import { CARE_PLAN_SHAREABLE_POLICY } from "../src/lib/chart/share-policy";
@@ -1251,21 +1256,40 @@ async function main() {
 
   const resourceId = "12121212-1212-4121-8121-121212121212";
   const comfortResourceId = "12121212-1212-4121-8121-121212121213";
+  const priyaResourceId = "12121212-1212-4121-8121-121212121214";
   await db.insert(resources).values([
     {
       id: resourceId,
       organizationId: ORG_ID,
-      // Written in Maya's own voice: a family reads a person here, never "your doula"
+      // Written in her own voice: a family reads a person here, never "your doula"
       // (TOK-38 B11). The title says whose handout it is, so it cannot collide with the
       // comfort checklist below in the portal list (TOK-41 G7).
-      title: "What Maya does (and does not do)",
+      //
+      // Owned, and titled from the owner (TOK-70). NOVA has two doulas: this used to be
+      // an org-wide row with a literal "What Maya does…" title, so Priya opened her own
+      // library and found the founder's first-person handout in it. The name is built
+      // from whoever owns the row, and the owner is who decides who sees it.
+      ownerUserId: DOULA_ID,
+      title: providerHandoutTitle(MAYA.name),
       kind: "handout",
-      body: "I stay with you, help you change positions, talk with your partner, and keep the plan visible. I do not perform clinical exams and I do not speak for your medical team — that stays with your midwife or doctor.",
-      tags: ["welcome", "expectations"],
+      body: providerHandoutBody(),
+      tags: [...PROVIDER_HANDOUT_TAGS],
+    },
+    {
+      // Priya's own copy, in her voice under her name — so the second doula's library is
+      // furnished rather than merely free of someone else's handout.
+      id: priyaResourceId,
+      organizationId: ORG_ID,
+      ownerUserId: PRIYA_USER_ID,
+      title: providerHandoutTitle(PRIYA.name),
+      kind: "handout",
+      body: providerHandoutBody(),
+      tags: [...PROVIDER_HANDOUT_TAGS],
     },
     {
       id: comfortResourceId,
       organizationId: ORG_ID,
+      // No owner: the practice wrote this one, so everyone on the roster has it.
       title: "Comfort measures to practice before labor",
       kind: "checklist",
       body: "Ten minutes a day is enough: slow breathing with a long exhale, hip squeezes with your partner, leaning forward over the counter, warm compress on the low back, and a playlist you actually like. Practice while nothing hurts so your body knows the moves later.",

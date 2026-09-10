@@ -7,6 +7,12 @@ import {
   shareResourcesWithFamiliesAction,
   unshareResourceAction,
 } from "@/app/actions/resources";
+import {
+  isPersonalResource,
+  RESOURCE_OWNER_FIELD,
+  RESOURCE_OWNER_MINE,
+  RESOURCE_OWNER_PRACTICE,
+} from "@/lib/provider-resources";
 import { PickHeading, PickList } from "@/components/brand/send-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,7 +39,7 @@ export default async function DoulaResourcesPage({
 }) {
   const query = await searchParams;
   const staff = await requireStaff();
-  const hub = await resourcesHub(staff.organizationId);
+  const hub = await resourcesHub(staff.organizationId, staff.userId);
   const clients = await listOrgClients(staff.organizationId, staff.userId);
   const notice = NOTICES[query.error ?? ""] ?? NOTICES[query.created ?? ""];
   const sharedCount = Number(query.shared ?? 0);
@@ -166,6 +172,14 @@ export default async function DoulaResourcesPage({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
+                      {/* Says out loud which sheets are in her own voice (TOK-70) — the
+                          practice's handouts carry no such mark because they are simply
+                          everyone's. */}
+                      {isPersonalResource(resource) ? (
+                        <Badge variant="secondary" className="bg-coral/12 text-coral">
+                          Yours
+                        </Badge>
+                      ) : null}
                       {(resource.tags ?? []).map((tag) => (
                         <Badge key={tag} variant="secondary" className="bg-teal/10 text-teal-ink">
                           {tag}
@@ -207,6 +221,26 @@ export default async function DoulaResourcesPage({
                 Title
               </label>
               <Input id="resource-title" name="title" required placeholder="Comfort measures at home" />
+            </div>
+            {/* Whose handout this is (TOK-70). A sheet written in the first person is
+                hers; anything the practice wrote belongs to the whole roster. */}
+            <div className="space-y-1.5">
+              <label htmlFor="resource-owner" className="text-[13px] font-medium text-teal-ink">
+                Whose is it
+              </label>
+              <select
+                id="resource-owner"
+                name={RESOURCE_OWNER_FIELD}
+                defaultValue={RESOURCE_OWNER_PRACTICE}
+                className={SELECT_CLASS}
+              >
+                <option value={RESOURCE_OWNER_PRACTICE}>
+                  The whole practice — everyone here can share it
+                </option>
+                <option value={RESOURCE_OWNER_MINE}>
+                  Mine — written in my voice, only in my library
+                </option>
+              </select>
             </div>
             <div className="space-y-1.5">
               <label htmlFor="resource-kind" className="text-[13px] font-medium text-teal-ink">

@@ -56,6 +56,25 @@ export function providerHandoutBody(): string {
 
 export const PROVIDER_HANDOUT_TAGS = ["welcome", "expectations"] as const;
 
+/* ------------------------------------------------------------------- authoring ---- */
+
+/** The ownership picker on the New-resource form, in one place for form and action. */
+export const RESOURCE_OWNER_FIELD = "owner";
+export const RESOURCE_OWNER_PRACTICE = "practice";
+export const RESOURCE_OWNER_MINE = "mine";
+
+/**
+ * Who owns a resource being written now. Anything that is not an explicit "mine" is the
+ * practice's: an unticked default should widen who can help a family, never narrow it,
+ * and a personal handout is a deliberate act.
+ */
+export function resourceOwnerFromForm(
+  raw: FormDataEntryValue | string | null | undefined,
+  authorUserId: string,
+): string | null {
+  return String(raw ?? "").trim() === RESOURCE_OWNER_MINE ? authorUserId : null;
+}
+
 export type OwnedResource = {
   id: string;
   title: string;
