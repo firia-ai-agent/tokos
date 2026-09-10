@@ -92,10 +92,22 @@ export default async function BookConsultPage({
           </CardHeader>
           <CardContent>
             {slots.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No open windows this fortnight. Write {row.user.name} after you receive a portal
-                invite.
-              </p>
+              /* Warm, and with somewhere to go (TOK-71 taste). "No open windows this
+                 fortnight" is a closed door in a stranger's words at the exact moment a
+                 family worked up the nerve to reach out — so it is her name, what is
+                 actually true, and a way through. */
+              <div className="space-y-3">
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {firstName} hasn&rsquo;t opened times for the next couple of weeks yet —
+                  send her a note and she will find one with you.
+                </p>
+                <a
+                  href={`/p/${slug}`}
+                  className="inline-flex text-[13px] font-semibold text-coral hover:underline"
+                >
+                  Back to {firstName}&rsquo;s page →
+                </a>
+              </div>
             ) : (
               <form action={publicBookAction} className="space-y-4">
                 <input type="hidden" name="slug" value={slug} />
