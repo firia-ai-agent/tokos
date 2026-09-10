@@ -19,8 +19,8 @@ import {
   sendIntro,
   startActiveCare,
 } from "@/lib/funnel";
-import { TIME_OFF_TYPE, organizationTimezone, parseAvailabilityWindow } from "@/lib/calendar";
-import { parseTimeOffRange } from "@/lib/calendar-grid";
+import { TIME_OFF_TYPE, organizationTimezone, parseWeekWindows } from "@/lib/calendar";
+import { parseTimeOffSpan } from "@/lib/calendar-grid";
 import { writeAudit } from "@/lib/audit";
 import { familySignUrl, isLiveContract, isUnsignedContract } from "@/lib/family-money";
 import { newId } from "@/lib/ids";
@@ -254,9 +254,29 @@ export async function toggleThreadPinAction(formData: FormData) {
   revalidatePath("/doula/messages");
 }
 
+/**
+ * Save the whole week the schedule grid painted (TOK-78).
+ *
+ * A weekday is a list of windows now, not one From→To, so the grid posts the entire week
+ * as one field and this replaces the whole set. Expressing "Wednesday lost its afternoon"
+ * by the absence of a row is the only way a delete cannot be missed — a per-day diff would
+ * need a checkbox to say what the rows already say.
+ *
+ * The week is re-validated here rather than trusted: the grid merges overlaps as you
+ * paint, but a direct POST is not the grid, and windows that shared an hour would open
+ * duplicate slots on the book page.
+ */
 export async function saveAvailabilityAction(formData: FormData) {
   const staff = await requireStaff();
+  const parsed = parseWeekWindows(formData.get("windows"));
+  if (!parsed.ok) {
+    const params = new URLSearchParams({ view: "settings", error: parsed.code });
+    if (typeof parsed.weekday === "number") params.set("weekday", String(parsed.weekday));
+    redirect(`/doula/calendar?${params.toString()}`);
+  }
+
   const { availability } = await import("@/db/schema");
+  const timezone = await organizationTimezone(staff.organizationId);
   const db = getDb();
   await db
     .delete(availability)
@@ -266,42 +286,44 @@ export async function saveAvailabilityAction(formData: FormData) {
         eq(availability.organizationId, staff.organizationId),
       ),
     );
-  const days = [1, 2, 3, 4, 5, 6, 0];
-  for (const weekday of days) {
-    if (formData.get(`day-${weekday}`) !== "on") continue;
-    // The form now posts minutes from half-hour selects (TOK-33 C8). A window that does
-    // not parse is dropped rather than stored inverted — `expandAvailabilitySlots` would
-    // silently emit nothing for it, and a doula would never learn why.
-    const window = parseAvailabilityWindow(
-      formData.get(`start-${weekday}`),
-      formData.get(`end-${weekday}`),
+  if (parsed.windows.length > 0) {
+    await db.insert(availability).values(
+      parsed.windows.map((window) => ({
+        id: newId(),
+        organizationId: staff.organizationId,
+        userId: staff.userId,
+        weekday: window.weekday,
+        startMinutes: window.startMinutes,
+        endMinutes: window.endMinutes,
+        timezone,
+      })),
     );
-    if (!window) continue;
-    await db.insert(availability).values({
-      id: newId(),
-      organizationId: staff.organizationId,
-      userId: staff.userId,
-      weekday,
-      startMinutes: window.startMinutes,
-      endMinutes: window.endMinutes,
-    });
   }
   revalidatePath("/doula/calendar");
+  revalidatePath("/portal/calendar");
   redirect("/doula/calendar?view=settings&saved=windows");
 }
 
 /**
- * Block days off (TOK-54). A day off is written into the same `calendar_events` table a
- * visit is, so `listOpenSlots` stops offering those hours the moment this returns —
- * there is no second calendar to keep in step, and a family booking page cannot serve a
- * window the practice already closed.
+ * Block time off (TOK-54, hours in TOK-78). A block is written into the same
+ * `calendar_events` table a visit is, so `listOpenSlots` stops offering those hours the
+ * moment this returns — there is no second calendar to keep in step, and a family booking
+ * page cannot serve a window the practice already closed.
+ *
+ * The clock is optional and that is the whole feature: leave the times blank and it is
+ * the day off it always was; fill them in and only that span closes, so a 1–2pm dentist
+ * appointment no longer costs a doula her whole Tuesday.
  */
 export async function saveTimeOffAction(formData: FormData) {
   const staff = await requireStaff();
   const timeZone = await organizationTimezone(staff.organizationId);
-  const range = parseTimeOffRange(
-    formData.get("timeOffStart"),
-    formData.get("timeOffEnd"),
+  const range = parseTimeOffSpan(
+    {
+      start: formData.get("timeOffStart"),
+      end: formData.get("timeOffEnd"),
+      fromTime: formData.get("timeOffFrom"),
+      toTime: formData.get("timeOffTo"),
+    },
     timeZone,
   );
   if (!range) redirect("/doula/calendar?view=settings&error=time-off");

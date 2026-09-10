@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TIMEZONE,
+  availabilityErrorMessage,
   clientVisitLabel,
+  dayWindowMinutes,
+  formatWindowRange,
+  mergeDayWindows,
+  parseClockMinutes,
+  parseWeekWindows,
+  summarizeDayWindows,
+  validateWeekWindows,
+  windowsByWeekday,
   durationMinutes,
   expandAvailabilitySlots,
   formatDuration,
@@ -314,5 +323,158 @@ describe("isMissedVisit", () => {
     expect(isMissedVisit(visit({ endsAt: "2026-09-08T15:00:00Z" }), NOW)).toBe(true);
     expect(isMissedVisit(visit({ endsAt: "not a date" }), NOW)).toBe(false);
     expect(isMissedVisit(visit({ status: null }), NOW)).toBe(false);
+  });
+});
+
+/**
+ * TOK-78. A weekday is a list of windows now, so the two things worth proving are that
+ * the hole between two windows survives the whole way to the book page, and that a week
+ * which cannot be true is refused rather than half-saved.
+ */
+describe("multi-window weekdays (TOK-78)", () => {
+  /** Mon 10–12 and 2–4: a doula out for a prenatal visit over lunch. */
+  const splitMonday = [
+    { weekday: MONDAY, startMinutes: 600, endMinutes: 720, timezone: DEFAULT_TIMEZONE },
+    { weekday: MONDAY, startMinutes: 840, endMinutes: 960, timezone: DEFAULT_TIMEZONE },
+  ];
+
+  it("opens both windows and leaves the midday gap closed", () => {
+    const from = new Date("2026-09-07T00:00:00Z");
+    const slots = expandAvailabilitySlots({ rules: splitMonday, from, days: 3 });
+
+    expect(slots.map((slot) => et(slot.startsAt).minutes)).toEqual([600, 660, 840, 900]);
+    // 12:00 and 13:00 are not offered — the gap is real, not a rounding artefact.
+    expect(slots.some((slot) => et(slot.startsAt).minutes === 720)).toBe(false);
+    expect(slots.some((slot) => et(slot.startsAt).minutes === 780)).toBe(false);
+  });
+
+  it("refuses to book the gap even when the hour is posted directly", () => {
+    const now = new Date("2026-09-07T00:00:00Z");
+    const noon = new Date("2026-09-07T16:00:00Z"); // 12:00 EDT
+    const check = isSlotOpen({
+      rules: splitMonday,
+      busy: [],
+      startsAt: noon,
+      endsAt: new Date(noon.getTime() + 60 * 60_000),
+      now,
+    });
+    expect(check).toEqual({ ok: false, reason: "outside_availability" });
+  });
+
+  it("loads a legacy single-window day as one window and saves it back unchanged", () => {
+    const legacy = [{ weekday: MONDAY, startMinutes: 600, endMinutes: 960 }];
+    const byDay = windowsByWeekday(legacy);
+
+    expect(byDay.get(MONDAY)).toEqual([{ startMinutes: 600, endMinutes: 960 }]);
+    expect(byDay.get(2)).toEqual([]);
+    const round = parseWeekWindows(JSON.stringify(legacy));
+    expect(round).toEqual({ ok: true, windows: legacy });
+  });
+
+  it("sorts a day's windows however they were posted", () => {
+    const parsed = parseWeekWindows(
+      JSON.stringify([
+        { weekday: MONDAY, startMinutes: 840, endMinutes: 960 },
+        { weekday: MONDAY, startMinutes: 600, endMinutes: 720 },
+      ]),
+    );
+    expect(parsed.ok && parsed.windows.map((window) => window.startMinutes)).toEqual([600, 840]);
+  });
+
+  it("names the day when two windows share an hour", () => {
+    const result = validateWeekWindows([
+      { weekday: 3, startMinutes: 600, endMinutes: 780 },
+      { weekday: 3, startMinutes: 720, endMinutes: 960 },
+    ]);
+    expect(result).toEqual({ ok: false, code: "overlap", weekday: 3 });
+    expect(availabilityErrorMessage("overlap", 3)).toContain("Wednesday");
+  });
+
+  it("lets the same hours stand on different days", () => {
+    const result = validateWeekWindows([
+      { weekday: 1, startMinutes: 600, endMinutes: 720 },
+      { weekday: 2, startMinutes: 600, endMinutes: 720 },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("allows two windows that merely touch", () => {
+    const result = validateWeekWindows([
+      { weekday: 1, startMinutes: 600, endMinutes: 720 },
+      { weekday: 1, startMinutes: 720, endMinutes: 840 },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a window that ends before it starts, and says which day", () => {
+    const result = validateWeekWindows([{ weekday: 4, startMinutes: 960, endMinutes: 600 }]);
+    expect(result).toEqual({ ok: false, code: "order", weekday: 4 });
+    expect(availabilityErrorMessage("order", 4)).toContain("Thursday");
+  });
+
+  it("refuses an empty window and a window past midnight", () => {
+    expect(validateWeekWindows([{ weekday: 1, startMinutes: 600, endMinutes: 600 }]).ok).toBe(false);
+    expect(validateWeekWindows([{ weekday: 1, startMinutes: 600, endMinutes: 1500 }]).ok).toBe(
+      false,
+    );
+    expect(validateWeekWindows([{ weekday: 9, startMinutes: 600, endMinutes: 720 }]).ok).toBe(false);
+  });
+
+  it("reads an empty week as a week with nothing open, not as a broken post", () => {
+    expect(parseWeekWindows("")).toEqual({ ok: true, windows: [] });
+    expect(parseWeekWindows("[]")).toEqual({ ok: true, windows: [] });
+  });
+
+  it("refuses anything that is not a week of windows", () => {
+    expect(parseWeekWindows("not json").ok).toBe(false);
+    expect(parseWeekWindows('{"weekday":1}').ok).toBe(false);
+    expect(parseWeekWindows('[{"weekday":1,"startMinutes":605,"endMinutes":960}]').ok).toBe(false);
+    expect(parseWeekWindows('[{"weekday":1,"startMinutes":"","endMinutes":960}]').ok).toBe(false);
+  });
+});
+
+describe("a day's windows, merged and spelled out (TOK-78)", () => {
+  it("joins overlapping and touching ranges so a painted week cannot store a duplicate", () => {
+    expect(
+      mergeDayWindows([
+        { startMinutes: 600, endMinutes: 720 },
+        { startMinutes: 660, endMinutes: 780 },
+        { startMinutes: 840, endMinutes: 960 },
+      ]),
+    ).toEqual([
+      { startMinutes: 600, endMinutes: 780 },
+      { startMinutes: 840, endMinutes: 960 },
+    ]);
+  });
+
+  it("drops a zero-length range rather than storing a window nobody can book", () => {
+    expect(mergeDayWindows([{ startMinutes: 600, endMinutes: 600 }])).toEqual([]);
+  });
+
+  it("reads a day back the way it would be said out loud", () => {
+    expect(
+      summarizeDayWindows([
+        { startMinutes: 600, endMinutes: 720 },
+        { startMinutes: 840, endMinutes: 990 },
+      ]),
+    ).toBe("10a–12p · 2p–4:30p");
+    expect(summarizeDayWindows([])).toBe("Closed");
+    expect(formatWindowRange(600, 720)).toBe("10:00 AM – 12:00 PM");
+    expect(dayWindowMinutes([{ startMinutes: 600, endMinutes: 720 }])).toBe(120);
+  });
+});
+
+describe("parseClockMinutes (TOK-78)", () => {
+  it("reads what a time input posts", () => {
+    expect(parseClockMinutes("13:00")).toBe(780);
+    expect(parseClockMinutes("09:30")).toBe(570);
+    expect(parseClockMinutes("00:00")).toBe(0);
+  });
+
+  it("treats a blank or unreadable clock as no clock at all, never as midnight", () => {
+    expect(parseClockMinutes("")).toBeNull();
+    expect(parseClockMinutes(null)).toBeNull();
+    expect(parseClockMinutes("1pm")).toBeNull();
+    expect(parseClockMinutes("25:00")).toBeNull();
   });
 });

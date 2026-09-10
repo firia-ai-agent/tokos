@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { availability, providerProfiles } from "@/db/schema";
 import {
   BOOKING_HORIZON_DAYS,
+  availabilityErrorMessage,
   clientVisitLabel,
   dayKey,
   durationMinutes,
@@ -11,17 +12,18 @@ import {
   formatDayHeading,
   formatSlotTime,
   groupByDay,
-  halfHourOptions,
   listOpenSlots,
   listSchedule,
   organizationTimezone,
   timezoneLabel,
   type ScheduleEntry,
   type Slot,
+  type WindowsErrorCode,
 } from "@/lib/calendar";
 import {
   bucketByDay,
-  formatTimeOffRange,
+  coversWholeDay,
+  formatTimeOffSpan,
   monthGrid,
   monthKey,
   openSlotsByDay,
@@ -42,23 +44,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { EmptyState } from "@/components/brand/states";
+import { AvailabilityWeekGrid } from "@/components/brand/availability-week-grid";
 import { CalendarFrame, DayChip, MonthGrid } from "@/components/brand/calendar-grid";
 import { CopyLink } from "@/components/brand/copy-link";
 import { cn } from "@/lib/utils";
-
-const DAYS = [
-  { n: 1, label: "Monday" },
-  { n: 2, label: "Tuesday" },
-  { n: 3, label: "Wednesday" },
-  { n: 4, label: "Thursday" },
-  { n: 5, label: "Friday" },
-  { n: 6, label: "Saturday" },
-  { n: 0, label: "Sunday" },
-];
-
-/** 12:00 AM–11:30 PM to open a window, 12:30 AM–midnight to close it. */
-const START_OPTIONS = halfHourOptions(0, 23 * 60 + 30);
-const END_OPTIONS = halfHourOptions(30, 24 * 60);
 
 const SELECT_CLASS =
   "h-8 rounded-lg border border-input bg-transparent px-2 py-1 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -77,34 +66,24 @@ const RAIL_VISIT_COUNT = 3;
 
 const WEEKDAY_ABBREVIATIONS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/**
- * A half-hour select, not a raw hour integer (TOK-33 C8). The old form asked a doula to
- * type `10` and `16` into number boxes, which could neither express 9:30 nor say which
- * clock it meant.
- */
-function TimeSelect({
-  name,
-  defaultValue,
-  options,
-  label,
-}: {
-  name: string;
-  defaultValue: number;
-  options: { value: number; label: string }[];
-  label: string;
-}) {
-  return (
-    <select name={name} defaultValue={defaultValue} aria-label={label} className={SELECT_CLASS}>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  );
-}
+/** What a day off does to one day: closes it outright, or takes a span out of it. */
+type DayTimeOff = { closed: boolean; partial: ScheduleEntry[] };
 
-type Query = { view?: string; month?: string; day?: string; saved?: string; error?: string };
+/** What a redirect after a save is telling the doula. */
+const SAVED_MESSAGES: Record<string, string> = {
+  windows: "Weekly schedule saved. Families book against it from now on.",
+  "time-off": "Blocked. Nobody can book that time.",
+  "time-off-removed": "Unblocked. Your weekly windows are open on those hours again.",
+};
+
+type Query = {
+  view?: string;
+  month?: string;
+  day?: string;
+  saved?: string;
+  error?: string;
+  weekday?: string;
+};
 
 export default async function CalendarPage({
   searchParams,
@@ -165,6 +144,16 @@ export default async function CalendarPage({
   );
   const visitsByDay = bucketByDay(visits, timeZone);
   const timeOffByDay = bucketByDay(timeOff, timeZone);
+  // A 1–2pm block closes an hour, not a Tuesday (TOK-78). The grid greys a day out only
+  // when a block covers it end to end; a partial block shows as the span it actually is,
+  // and the open-window counts beside it already have the hour subtracted.
+  const dayTimeOff = (day: CalendarDay) => {
+    const entries = timeOffByDay.get(day.key) ?? [];
+    return {
+      closed: entries.some((entry) => coversWholeDay(entry, day)),
+      partial: entries.filter((entry) => !coversWholeDay(entry, day)),
+    };
+  };
 
   // Open windows across the days actually on screen, so a cell can say what is still
   // bookable rather than only what is taken.
@@ -195,6 +184,12 @@ export default async function CalendarPage({
   };
 
   const nextVisit = upcoming[0];
+  const windowsError = (["unreadable", "order", "overlap"] as const).includes(
+    query.error as WindowsErrorCode,
+  )
+    ? (query.error as WindowsErrorCode)
+    : null;
+  const savedMessage = query.saved ? SAVED_MESSAGES[query.saved] : undefined;
 
   return (
     <div className="space-y-4">
@@ -263,8 +258,28 @@ export default async function CalendarPage({
       {query.error === "time-off" ? (
         <Alert variant="destructive">
           <AlertDescription>
-            Those dates did not read as a range. Pick a start date, and an end date on or after it.
+            That did not read as a block of time. Pick a date, and an end that comes after
+            the start — or leave the times blank for the whole day.
           </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {/* A refused week says which day and what is wrong with it, because "invalid" tells
+          a doula nothing about the Wednesday she has to go fix. */}
+      {windowsError ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {availabilityErrorMessage(
+              windowsError,
+              query.weekday === undefined ? undefined : Number(query.weekday),
+            )}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {savedMessage ? (
+        <Alert>
+          <AlertDescription>{savedMessage}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -298,7 +313,7 @@ export default async function CalendarPage({
                   <MonthCellBody
                     day={day}
                     visits={visitsByDay.get(day.key) ?? []}
-                    closed={(timeOffByDay.get(day.key) ?? []).length > 0}
+                    off={dayTimeOff(day)}
                     openCount={day.isPast ? 0 : (openByDay.get(day.key) ?? 0)}
                     timeZone={timeZone}
                   />
@@ -316,7 +331,7 @@ export default async function CalendarPage({
             <WeekColumns
               days={grid.days}
               visitsByDay={visitsByDay}
-              timeOffByDay={timeOffByDay}
+              dayTimeOff={dayTimeOff}
               openSlotsOnDay={openSlotsOnDay}
               timeZone={timeZone}
             />
@@ -383,46 +398,22 @@ export default async function CalendarPage({
       ) : null}
 
       {view === "settings" ? (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,2.2fr)_minmax(300px,1fr)]">
           <Card>
             <CardHeader>
-              <CardTitle>Recurring weekly windows</CardTitle>
+              <CardTitle>Weekly schedule</CardTitle>
               <CardDescription>
-                These repeat every week until you change them. Times are your practice&rsquo;s
-                clock — {timeZone} ({zone}).
+                Paint the hours you are open. They repeat every week until you change them,
+                on your practice&rsquo;s clock — {timeZone} ({zone}). A gap between two
+                blocks is a gap families cannot book.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <form action={saveAvailabilityAction} className="space-y-2">
-                {DAYS.map((day) => {
-                  const rule = rules.find((item) => item.weekday === day.n);
-                  return (
-                    <div
-                      key={day.n}
-                      className="flex flex-wrap items-center gap-2 rounded-lg bg-cloud/70 px-2.5 py-1.5 text-sm"
-                    >
-                      <label className="flex w-32 items-center gap-2 font-medium text-teal-ink">
-                        <input type="checkbox" name={`day-${day.n}`} defaultChecked={Boolean(rule)} />
-                        {day.label}
-                      </label>
-                      <TimeSelect
-                        name={`start-${day.n}`}
-                        defaultValue={rule?.startMinutes ?? 10 * 60}
-                        options={START_OPTIONS}
-                        label={`${day.label} opens at`}
-                      />
-                      <span>to</span>
-                      <TimeSelect
-                        name={`end-${day.n}`}
-                        defaultValue={rule?.endMinutes ?? 16 * 60}
-                        options={END_OPTIONS}
-                        label={`${day.label} closes at`}
-                      />
-                    </div>
-                  );
-                })}
-                <Button type="submit">Save windows</Button>
-              </form>
+              <AvailabilityWeekGrid
+                windows={rules}
+                zoneLabel={`${timeZone} (${zone})`}
+                action={saveAvailabilityAction}
+              />
               <p className="text-sm text-muted-foreground">
                 {openForFamilies.length > 0
                   ? `Families see ${openForFamilies.length} open ${
@@ -437,15 +428,15 @@ export default async function CalendarPage({
             <CardHeader>
               <CardTitle>Time off</CardTitle>
               <CardDescription>
-                Block days and the weekly windows stop opening on them — nobody can book a time
-                you are away.
+                Block a whole day, or just the hour you are at the dentist. Whatever you
+                block stops opening — nobody can book a time you are away.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <form action={saveTimeOffAction} className="space-y-2">
+              <form action={saveTimeOffAction} className="space-y-2.5">
                 <div className="flex flex-wrap items-end gap-2">
                   <label className="text-[12.5px] font-medium text-teal-ink">
-                    <span className="block">From</span>
+                    <span className="block">Date</span>
                     <input
                       type="date"
                       name="timeOffStart"
@@ -458,18 +449,34 @@ export default async function CalendarPage({
                     <span className="block">Through</span>
                     <input type="date" name="timeOffEnd" className={SELECT_CLASS} />
                   </label>
-                  <label className="min-w-[150px] flex-1 text-[12.5px] font-medium text-teal-ink">
-                    <span className="block">What is it?</span>
-                    <input
-                      type="text"
-                      name="timeOffLabel"
-                      placeholder="Time off"
-                      className={cn(SELECT_CLASS, "w-full")}
-                    />
-                  </label>
                 </div>
+                {/* Hours are the point of this panel, so they sit on the form rather than
+                    behind an "advanced" disclosure — and blank still means the whole day,
+                    which is what every block written before today meant. */}
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="text-[12.5px] font-medium text-teal-ink">
+                    <span className="block">From</span>
+                    <input type="time" name="timeOffFrom" step={1800} className={SELECT_CLASS} />
+                  </label>
+                  <label className="text-[12.5px] font-medium text-teal-ink">
+                    <span className="block">To</span>
+                    <input type="time" name="timeOffTo" step={1800} className={SELECT_CLASS} />
+                  </label>
+                  <p className="pb-1.5 text-[11.5px] text-muted-foreground">
+                    Leave both blank for the whole day.
+                  </p>
+                </div>
+                <label className="block text-[12.5px] font-medium text-teal-ink">
+                  <span className="block">What is it?</span>
+                  <input
+                    type="text"
+                    name="timeOffLabel"
+                    placeholder="Time off"
+                    className={cn(SELECT_CLASS, "w-full")}
+                  />
+                </label>
                 <Button type="submit" variant="outline">
-                  Block these days
+                  Block this time
                 </Button>
               </form>
               {timeOff.length === 0 ? (
@@ -487,8 +494,8 @@ export default async function CalendarPage({
                         <span className="block truncate text-[13px] font-semibold text-teal-ink">
                           {entry.title}
                         </span>
-                        <span className="block text-[12px] text-muted-foreground">
-                          {formatTimeOffRange(entry.startsAt, entry.endsAt, timeZone)}
+                        <span className="block text-[12px] tabular-nums text-muted-foreground">
+                          {formatTimeOffSpan(entry.startsAt, entry.endsAt, timeZone)}
                         </span>
                       </span>
                       <form action={removeTimeOffAction}>
@@ -581,25 +588,35 @@ function ViewToggle({ href, label, active }: { href: string; label: string; acti
 function MonthCellBody({
   day,
   visits,
-  closed,
+  off,
   openCount,
   timeZone,
 }: {
   day: CalendarDay;
   visits: ScheduleEntry[];
-  closed: boolean;
+  off: DayTimeOff;
   openCount: number;
   timeZone: string;
 }) {
   const shown = visits.slice(0, CHIPS_PER_CELL);
   const hidden = visits.length - shown.length;
+  const closed = off.closed;
   return (
     <div className="flex flex-1 flex-col gap-0.5">
       {closed ? (
         <span className="rounded-md bg-teal-ink/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-teal-ink/65">
           Time off
         </span>
-      ) : null}
+      ) : (
+        off.partial.map((entry) => (
+          <span
+            key={entry.id}
+            className="truncate rounded-md bg-teal-ink/8 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-teal-ink/60"
+          >
+            Away {formatSlotTime(entry.startsAt, timeZone)}–{formatSlotTime(entry.endsAt, timeZone)}
+          </span>
+        ))
+      )}
       {shown.map((visit) => (
         <DayChip
           key={visit.id}
@@ -623,13 +640,13 @@ function MonthCellBody({
 function WeekColumns({
   days,
   visitsByDay,
-  timeOffByDay,
+  dayTimeOff,
   openSlotsOnDay,
   timeZone,
 }: {
   days: CalendarDay[];
   visitsByDay: Map<string, ScheduleEntry[]>;
-  timeOffByDay: Map<string, ScheduleEntry[]>;
+  dayTimeOff: (day: CalendarDay) => DayTimeOff;
   openSlotsOnDay: Map<string, Slot[]>;
   timeZone: string;
 }) {
@@ -637,7 +654,8 @@ function WeekColumns({
     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
       {days.map((day) => {
         const visits = visitsByDay.get(day.key) ?? [];
-        const closed = (timeOffByDay.get(day.key) ?? []).length > 0;
+        const off = dayTimeOff(day);
+        const closed = off.closed;
         const open = day.isPast || closed ? [] : (openSlotsOnDay.get(day.key) ?? []);
         return (
           <div
@@ -664,7 +682,17 @@ function WeekColumns({
               <span className="rounded-md bg-teal-ink/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-teal-ink/65">
                 Time off
               </span>
-            ) : null}
+            ) : (
+              off.partial.map((entry) => (
+                <span
+                  key={entry.id}
+                  className="truncate rounded-md bg-teal-ink/8 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-teal-ink/60"
+                >
+                  Away {formatSlotTime(entry.startsAt, timeZone)}–
+                  {formatSlotTime(entry.endsAt, timeZone)}
+                </span>
+              ))
+            )}
             {visits.map((visit) => {
               const place = visitPlace(visit.locationLabel);
               return (
@@ -851,7 +879,7 @@ function CalendarRail({
               <li key={entry.id} className="rounded-lg bg-card px-2.5 py-1.5 ring-1 ring-teal/10">
                 <p className="truncate text-[12.5px] font-semibold text-teal-ink">{entry.title}</p>
                 <p className="text-[11.5px] text-muted-foreground">
-                  {formatTimeOffRange(entry.startsAt, entry.endsAt, timeZone)}
+                  {formatTimeOffSpan(entry.startsAt, entry.endsAt, timeZone)}
                 </p>
               </li>
             ))}

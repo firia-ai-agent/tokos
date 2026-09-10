@@ -15,6 +15,7 @@ const clientCalendar = read("app", "(client)", "portal", "calendar", "page.tsx")
 const doulaCalendar = read("app", "(doula)", "doula", "calendar", "page.tsx");
 const publicBook = read("app", "(public)", "p", "[slug]", "book", "page.tsx");
 const slotPicker = read("components", "brand", "slot-picker.tsx");
+const weekGrid = read("components", "brand", "availability-week-grid.tsx");
 const clientLayout = read("app", "(client)", "portal", "layout.tsx");
 const nextConfig = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
 
@@ -53,8 +54,10 @@ describe("client /portal/calendar (TOK-33 C1–C7, C14)", () => {
 });
 
 describe("doula /doula/calendar (TOK-33 C8–C11)", () => {
-  it("edits availability with half-hour selects, not raw hour integers (C8)", () => {
-    expect(doulaCalendar).toContain("halfHourOptions(");
+  it("edits availability on the half-hour, not in raw hour integers (C8)", () => {
+    // The half-hour selects moved onto the grid's fine-tune row in TOK-78; the page
+    // itself no longer draws a time control at all.
+    expect(weekGrid).toContain("halfHourOptions(");
     expect(doulaCalendar).not.toContain('type="number"');
   });
 
@@ -113,14 +116,14 @@ describe("the calendar is a calendar (TOK-54)", () => {
     }
   });
 
-  it("moves the weekly checkboxes behind Settings and keeps Upcoming as a tab", () => {
+  it("moves the weekly editor behind Settings and keeps Upcoming as a tab", () => {
     expect(doulaCalendar).toContain('href={href({ view: "upcoming" })}');
     expect(doulaCalendar).toContain('href={href({ view: "settings" })}');
     // The availability editor is no longer the first thing on the page.
     expect(doulaCalendar.indexOf("action={saveAvailabilityAction}")).toBeGreaterThan(
       doulaCalendar.indexOf("<MonthGrid"),
     );
-    expect(doulaCalendar).toContain("Recurring weekly windows");
+    expect(doulaCalendar).toContain("Weekly schedule");
   });
 
   it("gives the booking link somewhere real to go", () => {
@@ -128,10 +131,10 @@ describe("the calendar is a calendar (TOK-54)", () => {
     expect(doulaCalendar).toContain("/book`");
   });
 
-  it("blocks days off through the same calendar families book against", () => {
+  it("blocks time off through the same calendar families book against", () => {
     expect(doulaCalendar).toContain("saveTimeOffAction");
     expect(doulaCalendar).toContain("removeTimeOffAction");
-    expect(doulaCalendar).toContain("Block these days");
+    expect(doulaCalendar).toContain("Block this time");
   });
 
   it("keeps a family's history and tells a link apart from a place", () => {
@@ -163,5 +166,59 @@ describe("/portal/visits alias (TOK-54)", () => {
   it("leaves the Visits nav pointing at the calendar itself, not the alias", () => {
     expect(clientLayout).toContain('{ href: "/portal/calendar", label: "Visits" }');
     expect(clientLayout).not.toContain('"/portal/visits"');
+  });
+});
+
+/**
+ * TOK-78. The bar here is the interaction model, not the words: availability was a
+ * settings form with one From→To per weekday, and a form with an `+ Add window` button
+ * on it would have been the same form. These assertions hold the page to a schedule
+ * surface — a grid you paint, where a midday gap is empty space rather than a setting.
+ */
+describe("availability is a schedule, not a settings form (TOK-78)", () => {
+  it("puts a week grid in Settings instead of seven From→To rows", () => {
+    expect(doulaCalendar).toContain("<AvailabilityWeekGrid");
+    // The seven-row form and its per-day field names are gone, not hidden.
+    expect(doulaCalendar).not.toContain("`start-${day.n}`");
+    expect(doulaCalendar).not.toContain("`day-${day.n}`");
+    expect(doulaCalendar).not.toContain("Recurring weekly windows");
+  });
+
+  it("paints windows as blocks a pointer can draw, move and resize", () => {
+    expect(weekGrid).toContain('"use client"');
+    expect(weekGrid).toContain("onPointerDown");
+    expect(weekGrid).toContain("pointermove");
+    expect(weekGrid).toContain("paintedRange(");
+    expect(weekGrid).toContain("blockPlacement(");
+    expect(weekGrid).toContain("cursor-ns-resize");
+  });
+
+  it("keeps a day's windows as a list, so a midday gap is empty grid", () => {
+    expect(weekGrid).toContain("+ Add window");
+    expect(weekGrid).toContain("mergeDayWindows");
+    expect(weekGrid).toContain("Empty grid is time nobody can book.");
+  });
+
+  it("reaches the grid from a keyboard as well as a pointer", () => {
+    expect(weekGrid).toContain("onKeyDown");
+    expect(weekGrid).toContain('event.key === "Backspace"');
+    expect(weekGrid).toContain("Window opens at");
+  });
+
+  it("offers hours on time off, not only whole days", () => {
+    expect(doulaCalendar).toContain('name="timeOffFrom"');
+    expect(doulaCalendar).toContain('name="timeOffTo"');
+    expect(doulaCalendar).toContain("Leave both blank for the whole day.");
+    expect(doulaCalendar).toContain("formatTimeOffSpan(");
+  });
+
+  it("greys a day out only when a block actually covers it", () => {
+    expect(doulaCalendar).toContain("coversWholeDay(entry, day)");
+    expect(doulaCalendar).toContain("Away {formatSlotTime(");
+  });
+
+  it("says which day a refused week is wrong on", () => {
+    expect(doulaCalendar).toContain("availabilityErrorMessage(");
+    expect(doulaCalendar).toContain("SAVED_MESSAGES");
   });
 });
