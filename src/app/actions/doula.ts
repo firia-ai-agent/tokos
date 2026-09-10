@@ -27,19 +27,25 @@ import { ensureProviderProfile } from "@/lib/provider-profile";
 import type { PhotoErrorCode } from "@/lib/photo";
 import { appUrl } from "@/lib/env";
 
+/**
+ * Sends the intro, with a link to the sender's *own* public profile (TOK-68).
+ *
+ * This used to read the profile row and fall back to the literal slug `maya-chen` when it
+ * found nothing — so Priya, who had no profile row until TOK-63, introduced herself to a
+ * family with a link to the founder's page. A staff user entitled to send an intro is
+ * entitled to a profile, so the row is created on demand and the URL is always hers.
+ */
 export async function sendIntroAction(clientId: string) {
   const staff = await requireStaff();
-  const db = getDb();
-  const [profile] = await db
-    .select()
-    .from(providerProfiles)
-    .where(eq(providerProfiles.userId, staff.userId))
-    .limit(1);
+  const profile = await ensureProviderProfile({
+    organizationId: staff.organizationId,
+    userId: staff.userId,
+  });
   await sendIntro({
     organizationId: staff.organizationId,
     clientId,
     actorUserId: staff.userId,
-    profileUrl: `${appUrl()}/p/${profile?.slug ?? "maya-chen"}`,
+    profileUrl: `${appUrl()}/p/${profile.slug}`,
   });
   revalidatePath("/doula");
 }

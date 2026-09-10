@@ -3,6 +3,7 @@ import { logoutAction } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { isDemoMode } from "@/lib/env";
 import { shellSearchTargets } from "@/lib/shell-persona";
+import { ProviderAvatar } from "@/components/brand/avatar";
 import { ShellNav, type ShellNavGroup, type ShellNavItem } from "@/components/brand/shell-nav";
 import {
   ShellTopBar,
@@ -24,6 +25,7 @@ export function AppShell({
   brandHint,
   personName,
   personMeta,
+  personPhotoFileId = null,
   nav,
   navGroups,
   children,
@@ -38,6 +40,15 @@ export function AppShell({
   brandHint?: string;
   personName?: string;
   personMeta?: string;
+  /**
+   * The signed-in person's selected headshot, if she has uploaded one (TOK-65).
+   *
+   * The shell used to draw its own initials from `personName` and nothing else, so a
+   * doula who had just attached a photo saw her face on her profile and two grey letters
+   * in the rail underneath it. There is one Media id for a person and this is where it
+   * enters the chrome; `ProviderAvatar` does the rest, and never falls back while it is set.
+   */
+  personPhotoFileId?: string | null;
   nav: ShellNavItem[];
   navGroups?: ShellNavGroup[];
   children: React.ReactNode;
@@ -48,13 +59,6 @@ export function AppShell({
   newItems?: ShellNewItem[];
   searchTargets?: { label: string; href: string; keywords: string }[];
 }) {
-  const initials = (personName ?? "T")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-
   const resolvedNewHref =
     newHref ?? (tone === "doula" ? "/doula/clients" : "/portal/forms");
   // The staff shell builds its own targets per persona (TOK-34 D6) and passes them in;
@@ -95,11 +99,16 @@ export function AppShell({
             <ShellNav items={nav} groups={navGroups} variant="rail" />
           </div>
           <div className="mt-auto border-t border-white/10 px-2 pt-3">
+            {/* The only place the product says who you are (TOK-65): photo, name, role,
+                Sign out — persistent, beside the nav, and never repeated in the top bar. */}
             {personName ? (
               <div className="mb-2.5 flex items-center gap-2.5">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-teal text-[11px] font-bold text-cloud">
-                  {initials}
-                </span>
+                <ProviderAvatar
+                  name={personName}
+                  photoFileId={personPhotoFileId}
+                  size={32}
+                  tone="rail"
+                />
                 <div className="min-w-0">
                   <p className="truncate text-[13px] font-semibold text-cloud">{personName}</p>
                   {personMeta ? (
@@ -132,8 +141,16 @@ export function AppShell({
               </div>
               <div className="flex items-center gap-2">
                 {personName ? (
-                  <span className="hidden max-w-[9rem] truncate text-[12px] font-medium text-cloud/85 sm:inline">
-                    {personName}
+                  <span className="flex items-center gap-2">
+                    <ProviderAvatar
+                      name={personName}
+                      photoFileId={personPhotoFileId}
+                      size={24}
+                      tone="rail"
+                    />
+                    <span className="hidden max-w-[9rem] truncate text-[12px] font-medium text-cloud/85 sm:inline">
+                      {personName}
+                    </span>
                   </span>
                 ) : null}
                 <form action={logoutAction}>
@@ -154,8 +171,6 @@ export function AppShell({
           </header>
 
           <ShellTopBar
-            personName={personName}
-            personMeta={personMeta}
             tone={tone}
             notifyCount={notifyCount}
             notifyItems={notifyItems}

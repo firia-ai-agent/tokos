@@ -86,8 +86,6 @@ function NotifyRow({ item }: { item: ShellNotifyItem }) {
 }
 
 export function ShellTopBar({
-  personName,
-  personMeta,
   tone = "doula",
   notifyCount = 0,
   notifyItems = [],
@@ -95,8 +93,6 @@ export function ShellTopBar({
   newItems,
   searchTargets,
 }: {
-  personName?: string;
-  personMeta?: string;
   tone?: "doula" | "client";
   notifyCount?: number;
   notifyItems?: ShellNotifyItem[];
@@ -112,13 +108,6 @@ export function ShellTopBar({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-
-  const initials = (personName ?? "T")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -194,107 +183,96 @@ export function ShellTopBar({
         ) : null}
       </form>
 
-      {tone === "doula" ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className={cn(
-              "inline-flex h-9 items-center gap-1.5 rounded-lg bg-teal px-3.5 text-[13px] font-semibold text-cloud",
-              "transition-colors hover:bg-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/40",
-            )}
+      {/* Actions, not identity (TOK-65). The name·role·avatar block that used to end
+          this bar was the sidebar footer said twice; what is left here is the work:
+          search, create, and who is waiting. */}
+      <div className="ml-auto flex items-center gap-2.5">
+        {tone === "doula" ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(
+                "inline-flex h-9 items-center gap-1.5 rounded-lg bg-teal px-3.5 text-[13px] font-semibold text-cloud",
+                "transition-colors hover:bg-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/40",
+              )}
+            >
+              <Plus className="size-[15px]" strokeWidth={2.5} aria-hidden />
+              {newLabel}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[220px]">
+              <DropdownMenuLabel className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                Create / intake
+              </DropdownMenuLabel>
+              {menuItems.map((item) => (
+                <DropdownMenuItem key={`${item.href}-${item.label}`} asChild>
+                  <Link href={item.href}>{item.label}</Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Link
+            href={newHref}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-teal px-3.5 text-[13px] font-semibold text-cloud transition-colors hover:bg-teal-ink"
           >
             <Plus className="size-[15px]" strokeWidth={2.5} aria-hidden />
             {newLabel}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[220px]">
-            <DropdownMenuLabel className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-              Create / intake
-            </DropdownMenuLabel>
-            {menuItems.map((item) => (
-              <DropdownMenuItem key={`${item.href}-${item.label}`} asChild>
-                <Link href={item.href}>{item.label}</Link>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <Link
-          href={newHref}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-teal px-3.5 text-[13px] font-semibold text-cloud transition-colors hover:bg-teal-ink"
-        >
-          <Plus className="size-[15px]" strokeWidth={2.5} aria-hidden />
-          {newLabel}
-        </Link>
-      )}
+          </Link>
+        )}
 
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label={
-            notifyCount > 0
-              ? `Notifications — ${notifyCount} ${notifyCount === 1 ? "family needs" : "families need"} your attention`
-              : "Notifications — nobody is waiting on you"
-          }
-          className="relative flex size-9 items-center justify-center rounded-lg border border-teal/20 text-teal-ink/80 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/30"
-        >
-          <Bell className="size-4" aria-hidden />
-          {notifyCount > 0 ? (
-            <span className="absolute right-2 top-2 size-2 rounded-full bg-coral ring-2 ring-cloud" />
-          ) : null}
-        </DropdownMenuTrigger>
-        {/* One row per family, her issues underneath (TOK-53). The flat version listed an
-            alert at a time, so Jordan Rivera took three of the four slots and the name a
-            founder was scanning for arrived three times. */}
-        <DropdownMenuContent align="start" className="min-w-[324px] p-1.5">
-          <DropdownMenuLabel className="flex items-baseline justify-between gap-3 px-1.5 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Needs attention
-            {notifyItems.length > 0 ? (
-              <span className="text-[10.5px] font-semibold tracking-[0.04em] text-coral">
-                {notifyItems.length === 1 ? "1 family" : `${notifyItems.length} families`}
-              </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label={
+              notifyCount > 0
+                ? `Notifications — ${notifyCount} ${notifyCount === 1 ? "family needs" : "families need"} your attention`
+                : "Notifications — nobody is waiting on you"
+            }
+            className="relative flex size-9 items-center justify-center rounded-lg border border-teal/20 text-teal-ink/80 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/30"
+          >
+            <Bell className="size-4" aria-hidden />
+            {notifyCount > 0 ? (
+              <span className="absolute right-2 top-2 size-2 rounded-full bg-coral ring-2 ring-cloud" />
             ) : null}
-          </DropdownMenuLabel>
-          {notifyItems.length === 0 ? (
-            <p className="rounded-md bg-cloud px-2.5 py-2.5 text-[12.5px] leading-snug text-muted-foreground">
-              Nobody is waiting on you. New agreements, invoices and follow-ups land here.
-            </p>
-          ) : (
-            <div className="space-y-0.5">
-              {notifyItems.map((item) => (
-                <NotifyRow key={item.id} item={item} />
-              ))}
-            </div>
-          )}
-          <DropdownMenuSeparator className="my-1.5" />
-          <div className="flex items-center justify-between gap-2 px-1.5 pb-0.5">
-            <DropdownMenuItem asChild className="px-0 py-0.5 focus:bg-transparent">
-              <Link href={tone === "doula" ? "/doula" : "/portal"} className="text-[12.5px] font-semibold text-teal! hover:text-teal-ink!">
-                Go to Home
-              </Link>
-            </DropdownMenuItem>
-            {tone === "doula" && notifyItems.length > 0 ? (
+          </DropdownMenuTrigger>
+          {/* One row per family, her issues underneath (TOK-53). The flat version listed an
+              alert at a time, so Jordan Rivera took three of the four slots and the name a
+              founder was scanning for arrived three times. */}
+          <DropdownMenuContent align="start" className="min-w-[324px] p-1.5">
+            <DropdownMenuLabel className="flex items-baseline justify-between gap-3 px-1.5 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Needs attention
+              {notifyItems.length > 0 ? (
+                <span className="text-[10.5px] font-semibold tracking-[0.04em] text-coral">
+                  {notifyItems.length === 1 ? "1 family" : `${notifyItems.length} families`}
+                </span>
+              ) : null}
+            </DropdownMenuLabel>
+            {notifyItems.length === 0 ? (
+              <p className="rounded-md bg-cloud px-2.5 py-2.5 text-[12.5px] leading-snug text-muted-foreground">
+                Nobody is waiting on you. New agreements, invoices and follow-ups land here.
+              </p>
+            ) : (
+              <div className="space-y-0.5">
+                {notifyItems.map((item) => (
+                  <NotifyRow key={item.id} item={item} />
+                ))}
+              </div>
+            )}
+            <DropdownMenuSeparator className="my-1.5" />
+            <div className="flex items-center justify-between gap-2 px-1.5 pb-0.5">
               <DropdownMenuItem asChild className="px-0 py-0.5 focus:bg-transparent">
-                <Link href={REVIEW_BOARD_HREF} className="text-[12.5px] font-semibold text-teal! hover:text-teal-ink!">
-                  Work the whole list
+                <Link href={tone === "doula" ? "/doula" : "/portal"} className="text-[12.5px] font-semibold text-teal! hover:text-teal-ink!">
+                  Go to Home
                 </Link>
               </DropdownMenuItem>
-            ) : null}
-          </div>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <div className="ml-auto">
-        <div className="flex items-center gap-3">
-          {personName ? (
-            <div className="hidden text-right md:block">
-              <p className="text-[13px] font-semibold leading-tight text-teal-ink">{personName}</p>
-              {personMeta ? (
-                <p className="text-[12px] leading-tight text-muted-foreground">{personMeta}</p>
+              {tone === "doula" && notifyItems.length > 0 ? (
+                <DropdownMenuItem asChild className="px-0 py-0.5 focus:bg-transparent">
+                  <Link href={REVIEW_BOARD_HREF} className="text-[12.5px] font-semibold text-teal! hover:text-teal-ink!">
+                    Work the whole list
+                  </Link>
+                </DropdownMenuItem>
               ) : null}
             </div>
-          ) : null}
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-teal text-[12.5px] font-bold text-cloud">
-            {initials || "T"}
-          </span>
-        </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );

@@ -12,6 +12,7 @@ import {
   shellPersona,
   shellSearchTargets,
 } from "@/lib/shell-persona";
+import { providerPhotoFileId } from "@/lib/provider-profile";
 import { roleLabel } from "@/lib/team";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,16 @@ export default async function DoulaLayout({ children }: { children: React.ReactN
     .from(organizations)
     .where(eq(organizations.id, session.user.organizationId ?? ""))
     .limit(1);
+
+  // The face in the rail is the headshot she selected on her own profile — the same
+  // Media id `/p/[slug]` and the profile hero read (TOK-65). One source, so the rail can
+  // never disagree with the banner above it.
+  const photoFileId = session.user.id
+    ? await providerPhotoFileId({
+        organizationId: session.user.organizationId ?? "",
+        userId: session.user.id,
+      })
+    : null;
 
   const role = roleLabel(session.user.membershipRole);
   const orgName = org?.name ?? "Practice";
@@ -51,6 +62,7 @@ export default async function DoulaLayout({ children }: { children: React.ReactN
       brandHint="Birth work, kept whole"
       personName={session.user.name ?? "Doula"}
       personMeta={personMeta}
+      personPhotoFileId={photoFileId}
       nav={shellNavItems(persona, org?.name)}
       navGroups={shellNavGroups(persona, org?.name)}
       tone="doula"

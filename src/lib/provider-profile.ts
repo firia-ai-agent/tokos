@@ -85,6 +85,32 @@ export async function findProviderProfile(input: { organizationId: string; userI
 }
 
 /**
+ * Just the selected headshot, for the chrome (TOK-65).
+ *
+ * The shell needs one id per render and nothing else about the profile, and it must not
+ * create a row on a page view — a doula who has never opened her profile still gets a
+ * rail, she just gets it with initials. Missing profile and missing photo answer the
+ * same way, because to the avatar they are the same fact: no photo on file.
+ */
+export async function providerPhotoFileId(input: {
+  organizationId: string;
+  userId: string;
+}): Promise<string | null> {
+  const db = getDb();
+  const [row] = await db
+    .select({ photoFileId: providerProfiles.photoFileId })
+    .from(providerProfiles)
+    .where(
+      and(
+        eq(providerProfiles.userId, input.userId),
+        eq(providerProfiles.organizationId, input.organizationId),
+      ),
+    )
+    .limit(1);
+  return row?.photoFileId ?? null;
+}
+
+/**
  * Returns this staff user's profile, creating a minimal published one if they do not have
  * it yet. Callers must have already proven the actor is staff in `organizationId` — this
  * writes a row for whoever it is handed.

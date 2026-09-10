@@ -36,7 +36,13 @@ const fixtures = vi.hoisted(() => {
       },
     ],
   ]);
-  return { staff, clientsById, enqueueEmail: vi.fn() };
+  return {
+    staff,
+    clientsById,
+    enqueueEmail: vi.fn(),
+    sendIntro: vi.fn(),
+    ensureProviderProfile: vi.fn(async () => ({ slug: "priya-raman" })),
+  };
 });
 
 /** Mirrors the real guard: a client row is only reachable inside the staff org. */
@@ -55,13 +61,17 @@ vi.mock("@/db", () => ({ getDb: vi.fn(() => ({})) }));
 vi.mock("@/lib/funnel", () => ({
   confirmFit: vi.fn(),
   sendContract: vi.fn(),
-  sendIntro: vi.fn(),
+  sendIntro: fixtures.sendIntro,
   startActiveCare: vi.fn(),
   startFit: vi.fn(),
 }));
+vi.mock("@/lib/provider-profile", () => ({
+  ensureProviderProfile: fixtures.ensureProviderProfile,
+}));
+vi.mock("@/lib/env", () => ({ appUrl: () => "https://tokos.test", isDemoMode: () => false }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-const { remindFormsAction } = await import("./doula");
+const { remindFormsAction, sendIntroAction } = await import("./doula");
 
 describe("remindFormsAction ownership (TOK-20)", () => {
   beforeEach(() => {
@@ -97,5 +107,36 @@ describe("remindFormsAction ownership (TOK-20)", () => {
     );
     await remindFormsAction("");
     expect(fixtures.enqueueEmail).not.toHaveBeenCalled();
+  });
+});
+
+/* -------------------------------------------------------------------- TOK-68 */
+
+/**
+ * The intro is the first thing a family ever reads from a doula, and it carries a link to
+ * "her" page. When there was no profile row the action fell back to the literal slug
+ * `maya-chen`, so Priya introduced herself with the founder's public profile — a lie with
+ * someone else's face on it. Nothing about a fallback slug should survive a refactor.
+ */
+describe("sendIntroAction links to the sender's own profile (TOK-68)", () => {
+  beforeEach(() => {
+    fixtures.sendIntro.mockReset();
+    fixtures.ensureProviderProfile.mockClear();
+  });
+
+  it("uses the slug of the staffer sending it, creating her profile if she has none", async () => {
+    await sendIntroAction(OWN_CLIENT_ID);
+    expect(fixtures.ensureProviderProfile).toHaveBeenCalledWith({
+      organizationId: ORG,
+      userId: fixtures.staff.userId,
+    });
+    const call = fixtures.sendIntro.mock.calls[0][0] as { profileUrl: string };
+    expect(call.profileUrl).toBe("https://tokos.test/p/priya-raman");
+  });
+
+  it("never falls back to a hardcoded founder slug", async () => {
+    await sendIntroAction(OWN_CLIENT_ID);
+    const call = fixtures.sendIntro.mock.calls[0][0] as { profileUrl: string };
+    expect(call.profileUrl).not.toContain("maya-chen");
   });
 });

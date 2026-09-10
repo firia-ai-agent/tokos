@@ -69,6 +69,11 @@ export default async function ClientLayout({ children }: { children: React.React
       brandHint={chrome.hint}
       personName={session.user.name ?? "Client"}
       personMeta={`Client · ${chrome.portalName}`}
+      /* Families have no headshot to select — there is no photo on a `clients` row — so
+         the rail draws her initials, which is the honest answer rather than a fallback
+         standing in front of a picture (TOK-65). Her doula's face is on Home and at the
+         head of the thread, where it belongs. */
+      personPhotoFileId={null}
       nav={nav}
       navGroups={navGroups}
       tone="client"
