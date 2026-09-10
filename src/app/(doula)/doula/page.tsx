@@ -5,6 +5,8 @@ import { needsAttentionQueue, revenueHome } from "@/lib/queries";
 import { staffStageLabel } from "@/lib/pipeline";
 import { reasonSummary } from "@/lib/needs-attention";
 import { homeClientsEmpty, homeCtaLabel, shellPersona } from "@/lib/shell-persona";
+import { REVIEW_BOARD_HREF, reviewQueueLink } from "@/lib/home-queues";
+import { HomeHeader } from "@/components/brand/home-header";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +33,6 @@ export default async function DoulaHomePage() {
       persona === "agency" ? {} : { doulaUserId: staff.userId },
     ),
   ]);
-  const attentionHref = "/doula/clients?tab=attention";
   const firstName = (staff.name ?? "there").split(/\s+/)[0];
   const todayLabel = format(new Date(), "EEEE, MMMM d");
   const maxBar = Math.max(...home.monthBars.map((bar) => bar.cents), 1);
@@ -39,35 +40,22 @@ export default async function DoulaHomePage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="max-w-2xl">
-          <h1 className="font-heading text-[28px] font-semibold leading-tight tracking-[-0.02em] text-teal-ink sm:text-[32px]">
-            {greetingFor()}, {firstName}
-          </h1>
-          <p className="mt-1.5 text-[14.5px] leading-relaxed text-muted-foreground">
-            {todayLabel}
-            {attention.length === 0 ? " · practice is clear" : null}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Was unlinked prose reading "N items need your review". A count nobody can
-              click is a count nobody acts on (TOK-49). */}
-          {attention.length > 0 ? (
-            <Link
-              href={attentionHref}
-              className="rounded-lg bg-teal-ink px-3.5 py-2 text-[13px] font-semibold text-cloud shadow-sm transition hover:bg-teal-ink/90"
-            >
-              Needs attention · {attention.length}
-            </Link>
-          ) : null}
+      {/* "6 items need your review" was the line Vera circled: true, useful, and unlinked.
+          It is the same sentence, and it opens the board it counts (TOK-52). */}
+      <HomeHeader
+        dateLabel={todayLabel}
+        title={`${greetingFor()}, ${firstName}`}
+        queue={attention.length > 0 ? reviewQueueLink(attention.length) : null}
+        quiet="Practice is clear — nothing is waiting on a review today."
+        action={
           <Link
             href="/doula/clients"
             className="rounded-lg bg-coral px-3.5 py-2 text-[13px] font-semibold text-accent-foreground shadow-sm transition hover:bg-coral/90"
           >
             {homeCtaLabel(persona)}
           </Link>
-        </div>
-      </header>
+        }
+      />
 
       {/* KPI strip — nova density, Cloud cards, Coral/Teal Ink emphasis */}
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 max-md:[&>*:last-child]:col-span-2">
@@ -163,10 +151,10 @@ export default async function DoulaHomePage() {
               </p>
             </div>
             <Link
-              href={attentionHref}
+              href={REVIEW_BOARD_HREF}
               className="shrink-0 rounded-md bg-cloud/15 px-2.5 py-1 text-[12px] font-semibold text-cloud hover:bg-cloud/25"
             >
-              {homeCtaLabel(persona)}
+              Open review
             </Link>
           </div>
           <ul className="divide-y divide-teal/10">

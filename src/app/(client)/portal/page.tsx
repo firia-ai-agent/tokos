@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MessageCircle } from "lucide-react";
 import { format } from "date-fns";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -15,7 +16,9 @@ import {
   phoneHref,
   resolveCareTeamCard,
 } from "@/lib/care-team";
-import { checklistCards, checklistSummary } from "@/lib/checklist";
+import { checklistCards, openTaskCount } from "@/lib/checklist";
+import { waitingQueueLink } from "@/lib/home-queues";
+import { HomeHeader } from "@/components/brand/home-header";
 import { ProviderAvatar } from "@/components/brand/avatar";
 import { cn } from "@/lib/utils";
 
@@ -92,18 +95,16 @@ export default async function PortalHomePage({
         </p>
       ))}
 
-      <header>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal">
-          {practice}
-        </p>
-        <h1 className="mt-1 font-heading text-[28px] font-semibold tracking-[-0.02em] text-teal-ink sm:text-[32px]">
-          Welcome, {firstName}
-        </h1>
-        {/* The open count is said once, here — a second "6 to do" chip read like a queue. */}
-        <p className="mt-1.5 text-[14.5px] text-muted-foreground">
-          {format(new Date(), "EEEE, MMMM d")} · {checklistSummary(checklist)}
-        </p>
-      </header>
+      {/* Date at the top of the band, then the greeting, then the one line worth acting
+          on — and that line opens the board it counts (TOK-52). It is said once: a second
+          "6 to do" chip read like a queue. */}
+      <HomeHeader
+        dateLabel={format(new Date(), "EEEE, MMMM d")}
+        eyebrow={practice}
+        title={`Welcome, ${firstName}`}
+        queue={openTaskCount(checklist) > 0 ? waitingQueueLink(checklist) : null}
+        quiet={`Nothing waiting on you today. ${doula.firstName} will say if that changes.`}
+      />
 
       {matched || facts.length > 0 ? (
         <section className="rounded-xl bg-card p-5 ring-1 ring-teal/15">
@@ -115,8 +116,18 @@ export default async function PortalHomePage({
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal">
                 Your care team
               </p>
-              <p className="mt-1 font-heading text-[21px] font-semibold tracking-[-0.01em] text-teal-ink">
+              {/* The name and the way to reach her, together. Reading who your doula is
+                  and then hunting the nav for Messages was the gap (TOK-52 → TOK-56). */}
+              <p className="mt-1 flex flex-wrap items-center gap-2 font-heading text-[21px] font-semibold tracking-[-0.01em] text-teal-ink">
                 {doula.name}
+                <Link
+                  href="/portal/messages"
+                  aria-label={`Message ${doula.name}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-cloud px-2.5 py-1 font-sans text-[12.5px] font-semibold text-teal ring-1 ring-teal/20 transition hover:ring-teal/45"
+                >
+                  <MessageCircle aria-hidden className="size-4" />
+                  Message
+                </Link>
               </p>
               <p className="mt-0.5 text-[13px] text-muted-foreground">
                 {matched

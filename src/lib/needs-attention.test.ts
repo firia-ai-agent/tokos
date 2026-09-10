@@ -3,6 +3,8 @@ import {
   NEEDS_ATTENTION_LABELS,
   NEEDS_ATTENTION_REASONS,
   daysSinceContact,
+  reasonActionHref,
+  reasonActionLabel,
   needsAttention,
   needsAttentionReasons,
   needsAttentionRows,
@@ -161,5 +163,21 @@ describe("daysSinceContact", () => {
   it("counts calendar days, or null when nothing is logged", () => {
     expect(daysSinceContact(new Date("2026-09-03T12:00:00Z"), TODAY)).toBe(7);
     expect(daysSinceContact(null, TODAY)).toBeNull();
+  });
+});
+
+/** TOK-52: a rule that cannot be acted on is a rule that gets ignored. */
+describe("every reason knows how it is fixed", () => {
+  it("has an action and a section of the record for each key", () => {
+    for (const key of NEEDS_ATTENTION_REASONS) {
+      expect(reasonActionLabel(key).trim()).toBeTruthy();
+      expect(reasonActionHref("c1", key)).toMatch(/^\/doula\/clients\/c1#[a-z-]+$/);
+    }
+  });
+
+  it("does not just repeat the label back", () => {
+    for (const key of NEEDS_ATTENTION_REASONS) {
+      expect(reasonActionLabel(key)).not.toBe(NEEDS_ATTENTION_LABELS[key]);
+    }
   });
 });

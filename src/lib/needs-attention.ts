@@ -38,6 +38,30 @@ export const NEEDS_ATTENTION_LABELS: Record<NeedsAttentionReasonKey, string> = {
   unreviewed: "Not reviewed",
 };
 
+/**
+ * What to do about each rule, and where it is done (TOK-52).
+ *
+ * The label says what is wrong; this says what fixes it, and points at the section of the
+ * record that fixes it. It lives with the rules so the review board cannot drift into
+ * inventing links of its own — a queue that opens the wrong tab is the polite version of
+ * a queue that opens nothing.
+ */
+const ACTIONS: Record<NeedsAttentionReasonKey, { action: string; anchor: string }> = {
+  follow_up_overdue: { action: "Set the next follow-up", anchor: "#lead-details" },
+  consult_note_missing: { action: "Write the consult note", anchor: "#notes" },
+  unmatched: { action: "Name a primary doula", anchor: "#care-team" },
+  unreviewed: { action: "Review the record", anchor: "#lead-details" },
+};
+
+export function reasonActionLabel(key: NeedsAttentionReasonKey): string {
+  return ACTIONS[key].action;
+}
+
+/** The exact surface that clears this reason — a section of the family's record. */
+export function reasonActionHref(clientId: string, key: NeedsAttentionReasonKey): string {
+  return `/doula/clients/${clientId}${ACTIONS[key].anchor}`;
+}
+
 const WEIGHTS: Record<NeedsAttentionReasonKey, number> = {
   follow_up_overdue: 40,
   consult_note_missing: 30,

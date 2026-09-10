@@ -213,7 +213,9 @@ export default async function ClientDetailPage({
         <Badge className="text-sm">{staffStageLabel(persona, funnel.stage)}</Badge>
       </div>
 
-      <Card>
+      {/* Anchors for the review board (TOK-52): a queue row lands on the section that
+          clears it, not at the top of a long record. */}
+      <Card id="care-team" className="scroll-mt-24">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle>Care team</CardTitle>
           <Link
@@ -328,7 +330,7 @@ export default async function ClientDetailPage({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="lead-details" className="scroll-mt-24">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle>Lead details</CardTitle>
           {persona === "agency" ? (
@@ -376,7 +378,7 @@ export default async function ClientDetailPage({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="notes" className="scroll-mt-24">
         <CardHeader>
           <CardTitle>Notes</CardTitle>
         </CardHeader>
@@ -386,7 +388,7 @@ export default async function ClientDetailPage({
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <Card id="money" className="scroll-mt-24">
           <CardHeader>
             <CardTitle>Contracts & invoices</CardTitle>
           </CardHeader>
@@ -639,7 +641,7 @@ export default async function ClientDetailPage({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="portal-messages" className="scroll-mt-24">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle>Portal messages</CardTitle>
           {unreadFromClient > 0 ? (
