@@ -5,6 +5,8 @@ import { removeProfilePhotoAction, saveProfileAction } from "@/app/actions/doula
 import { appUrl } from "@/lib/env";
 import { photoErrorMessage } from "@/lib/photo";
 import { ProviderAvatar } from "@/components/brand/avatar";
+import { ProviderRatesFields } from "@/components/brand/provider-rates-fields";
+import { parseRatesJson } from "@/lib/provider-rates";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,14 +71,12 @@ export default async function DoulaProfilePage({
               <Label htmlFor="bio">Bio</Label>
               <Textarea id="bio" name="bio" rows={6} defaultValue={profile?.bio} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="serviceArea">Service area</Label>
-              <Input id="serviceArea" name="serviceArea" defaultValue={profile?.serviceArea ?? ""} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ratesLabel">Rates</Label>
-              <Input id="ratesLabel" name="ratesLabel" defaultValue={profile?.ratesLabel ?? ""} />
-            </div>
+            <ProviderRatesFields
+              rates={parseRatesJson(profile?.ratesJson)}
+              address={profile?.serviceAreaAddress}
+              zip={profile?.serviceAreaZip}
+              radiusMiles={profile?.travelRadiusMiles}
+            />
             <Button type="submit">Save profile</Button>
           </form>
           {profile?.photoFileId ? (

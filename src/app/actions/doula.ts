@@ -23,6 +23,14 @@ import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
 import { requireStaff, requireStaffClient } from "@/lib/tenancy";
 import { clearProviderPhoto, saveProviderPhoto } from "@/lib/provider-photo";
+import {
+  SERVICE_AREA_FIELDS,
+  normalizeZip,
+  parseRadiusMiles,
+  parseRatesForm,
+  ratesSummary,
+  serviceAreaSummary,
+} from "@/lib/provider-rates";
 import { ensureProviderProfile } from "@/lib/provider-profile";
 import type { PhotoErrorCode } from "@/lib/photo";
 import { appUrl } from "@/lib/env";
@@ -281,13 +289,25 @@ export async function saveProfileAction(formData: FormData) {
     organizationId: staff.organizationId,
     userId: staff.userId,
   });
+  // Rates and service area are structured now (TOK-57). The grid and the radius are the
+  // truth; `ratesLabel` and `serviceArea` are rebuilt from them on every save so the
+  // public page keeps reading one field and never drifts from what she actually typed.
+  const rates = parseRatesForm(formData);
+  const address = String(formData.get(SERVICE_AREA_FIELDS.address) ?? "").trim();
+  const zip = normalizeZip(formData.get(SERVICE_AREA_FIELDS.zip));
+  const radiusMiles = parseRadiusMiles(formData.get(SERVICE_AREA_FIELDS.radius));
+
   await db
     .update(providerProfiles)
     .set({
       headline: String(formData.get("headline") ?? ""),
       bio: String(formData.get("bio") ?? ""),
-      serviceArea: String(formData.get("serviceArea") ?? ""),
-      ratesLabel: String(formData.get("ratesLabel") ?? ""),
+      ratesJson: rates,
+      ratesLabel: ratesSummary(rates),
+      serviceAreaAddress: address || null,
+      serviceAreaZip: zip || null,
+      travelRadiusMiles: radiusMiles,
+      serviceArea: serviceAreaSummary({ address, zip, radiusMiles }),
       updatedAt: new Date(),
     })
     .where(eq(providerProfiles.id, profile.id));

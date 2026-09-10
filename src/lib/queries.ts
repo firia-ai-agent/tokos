@@ -6,6 +6,7 @@ import {
   assignments,
   calendarEvents,
   clientAiNotes,
+  clientPortalAccess,
   clients,
   contracts,
   emailTemplateVersions,
@@ -23,6 +24,7 @@ import {
   pipelineEvents,
   pipelineStages,
   portalMessages,
+  providerProfiles,
   resourceShares,
   resources,
   users,
@@ -651,9 +653,19 @@ export async function teamRoster(organizationId: string) {
       name: users.name,
       email: users.email,
       credentialsLabel: users.credentialsLabel,
+      // Her own headshot on her own card, so the accounts grid never falls back to
+      // initials for someone who has uploaded a photo (TOK-65).
+      photoFileId: providerProfiles.photoFileId,
     })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
+    .leftJoin(
+      providerProfiles,
+      and(
+        eq(providerProfiles.userId, memberships.userId),
+        eq(providerProfiles.organizationId, memberships.organizationId),
+      ),
+    )
     .where(eq(memberships.organizationId, organizationId))
     .orderBy(asc(memberships.createdAt));
 
@@ -696,11 +708,24 @@ export async function orgMatches(organizationId: string) {
       engagementId: engagements.id,
       primaryDoulaUserId: engagements.primaryDoulaUserId,
       primaryDoulaName: users.name,
+      // The Family Accounts grid shows who this family is, not just her name (TOK-57):
+      // how to reach her, when she is due, where she lives, and whether her portal
+      // login is live or still an unopened invite.
+      email: clients.email,
+      phone: clients.phone,
+      edd: clients.edd,
+      city: clients.city,
+      region: clients.region,
+      postalCode: clients.postalCode,
+      serviceType: clients.serviceType,
+      portalStatus: clientPortalAccess.status,
+      portalUserId: clientPortalAccess.userId,
     })
     .from(clients)
     .leftJoin(pipelineStages, eq(pipelineStages.clientId, clients.id))
     .leftJoin(engagements, eq(engagements.clientId, clients.id))
     .leftJoin(users, eq(users.id, engagements.primaryDoulaUserId))
+    .leftJoin(clientPortalAccess, eq(clientPortalAccess.clientId, clients.id))
     .where(eq(clients.organizationId, organizationId))
     .orderBy(asc(clients.displayName));
 }
