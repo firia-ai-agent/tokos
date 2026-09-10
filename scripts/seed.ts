@@ -9,6 +9,7 @@ import {
   availability,
   carePlans,
   calendarEvents,
+  clientAiNotes,
   clientPortalAccess,
   clients,
   contractEvents,
@@ -55,6 +56,13 @@ const CEDAR_STAFF_ID = "22222222-2222-4222-8222-222222222223";
 const CEDAR_CLIENT_USER_ID = "33333333-3333-4333-8333-333333333336";
 const CEDAR_CLIENT_ID = "44444444-4444-4444-8444-444444444446";
 /**
+ * Two leads that exist only to make the Needs Attention rules visible on a fresh seed
+ * (TOK-49): one consult done with nothing written up, one overdue follow-up nobody owns.
+ * Neither has a portal login — a lead is a row on the board long before she is a family.
+ */
+const NOOR_CLIENT_ID = "44444444-4444-4444-8444-44444444444a";
+const TAMSIN_CLIENT_ID = "44444444-4444-4444-8444-44444444444b";
+/**
  * Who the demo signs in as lives in `src/lib/demo-logins.ts`, so the seed, the login
  * hint, and the README cannot disagree about which of these two doulas is the founder.
  */
@@ -71,6 +79,8 @@ const CEDAR_PRIMARY = "#5C4A3A";
 const SEED_PHOTO_DIR = join(process.cwd(), "public", "seed");
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+/** `yyyy-MM-dd` for a `date` column, offset from today. */
+const dateFromNow = (days: number) => daysFromNow(days).toISOString().slice(0, 10);
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000);
 
 /**
@@ -127,6 +137,7 @@ async function main() {
     visit_notes, birth_logs, care_plans,
     invoice_lines, invoices, audit_logs, file_objects, outbox_messages,
     email_template_versions, email_templates, portal_messages, resource_shares,
+    client_ai_notes,
     resources, form_submissions, form_assignments, form_templates,
     client_portal_access, availability, calendar_events, payment_statuses,
     esign_artifacts, contract_events, contracts, engagements, assignments,
@@ -253,22 +264,41 @@ async function main() {
     preferredName: "Jordan",
     email: JORDAN.email,
     phone: "(571) 555-0199",
-    source: "web",
+    source: "referral",
     edd: edd.toISOString().slice(0, 10),
     city: "Arlington",
     region: "VA",
+    postalCode: "22201",
     alternateContactName: "Sam Rivera",
     alternateContactPhone: "(571) 555-0110",
+    // The lead record NOVA actually runs off (TOK-49). Jordan is the worked example:
+    // owned, reviewed, insured, with a follow-up date that is not yet due.
+    serviceType: "birth_support",
+    hospital: "Virginia Hospital Center",
+    assignedProvider: "Dr. R. Okonjo",
+    insurance: "yes",
+    insuranceProvider: "CareFirst",
+    consultDate: dateFromNow(-9),
+    lastContactAt: hoursAgo(20),
+    followUpDueOn: dateFromNow(3),
+    intakeRef: "PSAF-1001",
+    ownerUserId: DOULA_ID,
+    reviewed: true,
+    reviewedAt: hoursAgo(30),
   });
 
-  // Jordan has already met Maya, so the row sits on `fit` with the hops that got it there.
-  // An agreement in the portal on top of a `new_lead` stage would be a state the funnel
-  // rules cannot produce (TOK-41).
+  // Jordan has already met Maya and the match is made, so the row sits on `fit_confirmed`
+  // with the hops that got it there. An agreement in the portal on top of a `new_lead`
+  // stage would be a state the funnel rules cannot produce (TOK-41). She stops short of
+  // `complete` because her deposit is still open — signed is not complete (TOK-49).
   await db.insert(pipelineStages).values({
     id: "77777777-7777-4777-8777-777777777777",
     organizationId: ORG_ID,
     clientId: CLIENT_ID,
-    stage: "fit",
+    stage: "fit_confirmed",
+    enteredAt: daysFromNow(-8),
+    fitConfirmedAt: daysFromNow(-8),
+    fitConfirmedByUserId: DOULA_ID,
   });
   await db.insert(pipelineEvents).values([
     {
@@ -278,22 +308,67 @@ async function main() {
       fromStage: null,
       toStage: "new_lead",
       reason: "seed",
+      // Backdated like the hops after it, so the stepper reads as a history rather than
+      // showing New lead as the most recent thing that happened.
+      at: daysFromNow(-18),
     },
     {
       id: "88888888-8888-4888-8888-88888888888a",
       organizationId: ORG_ID,
       clientId: CLIENT_ID,
       fromStage: "new_lead",
-      toStage: "intro",
+      toStage: "outreach_sent",
       reason: "seed",
+      at: daysFromNow(-16),
     },
     {
       id: "88888888-8888-4888-8888-88888888888b",
       organizationId: ORG_ID,
       clientId: CLIENT_ID,
-      fromStage: "intro",
-      toStage: "fit",
+      fromStage: "outreach_sent",
+      toStage: "consult_scheduled",
       reason: "seed",
+      at: daysFromNow(-12),
+    },
+    {
+      id: "88888888-8888-4888-8888-88888888888d",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      fromStage: "consult_scheduled",
+      toStage: "consult_done",
+      reason: "seed",
+      at: daysFromNow(-9),
+    },
+    {
+      id: "88888888-8888-4888-8888-88888888888e",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      fromStage: "consult_done",
+      toStage: "fit_confirmed",
+      reason: "seed",
+      at: daysFromNow(-8),
+    },
+  ]);
+  // Jordan's consult is written up, which is what keeps her off Needs Attention while
+  // Noor — same stage, no note — sits on it.
+  await db.insert(clientAiNotes).values([
+    {
+      id: "cc000000-0000-4000-8000-000000000001",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      body: "Consult at their place. Wants an unmedicated birth at VHC, partner is nervous about the drive. Sending the comfort-measures handout and a package quote tonight.",
+      source: "staff",
+      actorUserId: DOULA_ID,
+      at: daysFromNow(-9),
+    },
+    {
+      id: "cc000000-0000-4000-8000-000000000002",
+      organizationId: ORG_ID,
+      clientId: CLIENT_ID,
+      body: "Agreement and deposit invoice sent. Following up Friday if the deposit has not cleared.",
+      source: "staff",
+      actorUserId: DOULA_ID,
+      at: daysFromNow(-7),
     },
   ]);
   await db.insert(assignments).values({
@@ -524,10 +599,21 @@ async function main() {
     preferredName: "Avery",
     email: AVERY.email,
     phone: "(571) 555-0144",
-    source: "web",
+    source: "website",
     edd: averyEdd.toISOString().slice(0, 10),
     city: "Alexandria",
     region: "VA",
+    postalCode: "22301",
+    // Avery is the overdue one: a follow-up that slipped four days ago, nobody named
+    // primary, and no founder review yet — three Needs Attention rules on one row.
+    serviceType: "postpartum",
+    insurance: "unknown",
+    consultDate: null,
+    lastContactAt: daysFromNow(-11),
+    followUpDueOn: dateFromNow(-4),
+    intakeRef: "PSAF-1002",
+    ownerUserId: DOULA_ID,
+    reviewed: false,
   });
   // Avery is a step behind Jordan: intro sent, no consult booked yet, so the pipeline has
   // two clients in two different places instead of a column of identical rows (TOK-41).
@@ -535,7 +621,8 @@ async function main() {
     id: "77777777-7777-4777-8777-777777777778",
     organizationId: ORG_ID,
     clientId: AVERY_CLIENT_ID,
-    stage: "intro",
+    stage: "outreach_sent",
+    enteredAt: daysFromNow(-11),
   });
   await db.insert(pipelineEvents).values([
     {
@@ -545,14 +632,16 @@ async function main() {
       fromStage: null,
       toStage: "new_lead",
       reason: "seed",
+      at: daysFromNow(-14),
     },
     {
       id: "88888888-8888-4888-8888-88888888888c",
       organizationId: ORG_ID,
       clientId: AVERY_CLIENT_ID,
       fromStage: "new_lead",
-      toStage: "intro",
+      toStage: "outreach_sent",
       reason: "seed",
+      at: daysFromNow(-11),
     },
   ]);
   // Avery is Maya's, with Priya backing her up. The second row is what makes the two
@@ -586,6 +675,125 @@ async function main() {
     status: "active",
     inviteSentAt: new Date(),
   });
+
+  /**
+   * Two leads with no portal login, so the board has the two shapes the Needs Attention
+   * rules exist for (TOK-49): a consult that happened and was never written up, and an
+   * overdue follow-up on a record nobody owns.
+   *
+   * Invented people. Their addresses are on `example.invalid`, which cannot receive mail,
+   * so a demo seed can never send to a real inbox.
+   */
+  await db.insert(clients).values([
+    {
+      id: NOOR_CLIENT_ID,
+      organizationId: ORG_ID,
+      displayName: "Noor Vandermeer",
+      preferredName: "Noor",
+      email: "noor.vandermeer@example.invalid",
+      phone: "(571) 555-0161",
+      source: "referral",
+      edd: dateFromNow(84),
+      city: "Falls Church",
+      region: "VA",
+      postalCode: "22042",
+      serviceType: "overnight",
+      hospital: "Inova Fairfax",
+      assignedProvider: "Midwife L. Barrett",
+      insurance: "yes",
+      insuranceProvider: "Aetna",
+      consultDate: dateFromNow(-2),
+      lastContactAt: daysFromNow(-2),
+      followUpDueOn: dateFromNow(1),
+      intakeRef: "PSAF-1003",
+      ownerUserId: PRIYA_USER_ID,
+      reviewed: false,
+    },
+    {
+      id: TAMSIN_CLIENT_ID,
+      organizationId: ORG_ID,
+      displayName: "Tamsin Okafor",
+      preferredName: "Tamsin",
+      email: "tamsin.okafor@example.invalid",
+      phone: "(571) 555-0177",
+      source: "event",
+      edd: dateFromNow(140),
+      city: "Vienna",
+      region: "VA",
+      postalCode: "22180",
+      serviceType: "childbirth_class",
+      insurance: "no",
+      lastContactAt: daysFromNow(-15),
+      followUpDueOn: dateFromNow(-9),
+      intakeRef: "PSAF-1004",
+      reviewed: false,
+    },
+  ]);
+  await db.insert(pipelineStages).values([
+    {
+      id: "77777777-7777-4777-8777-77777777777a",
+      organizationId: ORG_ID,
+      clientId: NOOR_CLIENT_ID,
+      stage: "consult_done",
+      enteredAt: daysFromNow(-2),
+    },
+    {
+      id: "77777777-7777-4777-8777-77777777777b",
+      organizationId: ORG_ID,
+      clientId: TAMSIN_CLIENT_ID,
+      stage: "new_lead",
+      enteredAt: daysFromNow(-15),
+    },
+  ]);
+  await db.insert(pipelineEvents).values([
+    {
+      id: "88888888-8888-4888-8888-88888888888f",
+      organizationId: ORG_ID,
+      clientId: NOOR_CLIENT_ID,
+      fromStage: null,
+      toStage: "new_lead",
+      reason: "seed",
+      at: daysFromNow(-10),
+    },
+    {
+      id: "88888888-8888-4888-8888-888888888890",
+      organizationId: ORG_ID,
+      clientId: NOOR_CLIENT_ID,
+      fromStage: "new_lead",
+      toStage: "outreach_sent",
+      reason: "seed",
+      at: daysFromNow(-8),
+    },
+    {
+      id: "88888888-8888-4888-8888-888888888891",
+      organizationId: ORG_ID,
+      clientId: NOOR_CLIENT_ID,
+      fromStage: "outreach_sent",
+      toStage: "consult_scheduled",
+      reason: "seed",
+      at: daysFromNow(-6),
+    },
+    {
+      id: "88888888-8888-4888-8888-888888888892",
+      organizationId: ORG_ID,
+      clientId: NOOR_CLIENT_ID,
+      // Entered consult_done two days ago and nothing has been logged since — the rule
+      // NOVA describes as "note in by 4pm".
+      fromStage: "consult_scheduled",
+      toStage: "consult_done",
+      reason: "seed",
+      at: daysFromNow(-2),
+    },
+    {
+      id: "88888888-8888-4888-8888-888888888893",
+      organizationId: ORG_ID,
+      clientId: TAMSIN_CLIENT_ID,
+      fromStage: null,
+      toStage: "new_lead",
+      reason: "seed",
+      at: daysFromNow(-15),
+    },
+  ]);
 
   const weekdays = [1, 2, 3, 4, 5];
   await db.insert(availability).values(
@@ -927,9 +1135,16 @@ async function main() {
     displayName: RILEY.name,
     preferredName: "Riley",
     email: RILEY.email,
-    source: "web",
+    source: "website",
     city: "Richmond",
     region: "VA",
+    serviceType: "birth_support",
+    insurance: "unknown",
+    followUpDueOn: dateFromNow(2),
+    lastContactAt: hoursAgo(48),
+    intakeRef: "BDQ-2001",
+    ownerUserId: CEDAR_STAFF_ID,
+    reviewed: false,
   });
   await db.insert(pipelineStages).values({
     id: "77777777-7777-4777-8777-777777777779",
@@ -944,6 +1159,7 @@ async function main() {
     fromStage: null,
     toStage: "new_lead",
     reason: "seed",
+    at: daysFromNow(-5),
   });
   await db.insert(clientPortalAccess).values({
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac",
@@ -968,7 +1184,10 @@ ${logins}
 ${roster}
   Cedar client id: ${CEDAR_CLIENT_ID}
   Profile: /p/maya-chen, /p/sam-ortega (both seeded with a provider photo — TOK-25)
-  Pipeline: Jordan on fit, Avery on intro — two clients in two places, not a column of leads
+  Pipeline: Jordan fit_confirmed, Avery outreach_sent (overdue follow-up, unmatched),
+           Noor consult_done with no note, Tamsin new_lead 9 days overdue — the four
+           shapes Needs Attention exists for (TOK-49)
+  Import:   scripts/fixtures/nova-leads-sample.csv — 44 anonymized leads for /doula/clients/import
   Jordan:  fit consult booked with Maya, agreement sent, NOVA-1001 deposit open (TOK-41),
            engagement primary is Maya so every client surface names her (TOK-38)
   Forms:   3 templates, 3 incomplete each for Jordan and Avery (TOK-27) — the postpartum one

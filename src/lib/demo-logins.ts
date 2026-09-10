@@ -65,7 +65,7 @@ export const DEMO_ACCOUNTS = [
     membershipRole: null,
     shell: "portal",
     tenant: "nova",
-    note: "second NOVA family, at new_lead — Priya is her backup",
+    note: "second NOVA family, at outreach_sent with an overdue follow-up — Priya is her backup",
   },
   {
     key: "sam",

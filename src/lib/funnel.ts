@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import {
   assignments,
   calendarEvents,
+  clientAiNotes,
   clientPortalAccess,
   clients,
   contractEvents,
@@ -25,11 +26,16 @@ import { newId } from "@/lib/ids";
 import { enqueueEmail } from "@/lib/outbox";
 import {
   advanceAfterEvent,
+  canEnterAgreementSigned,
+  canSendContract,
   canTransition,
+  isStage,
+  migrateStage,
   plannedHops,
   type FunnelFlags,
   type PipelineStageName,
 } from "@/lib/pipeline";
+import { AI_NOTE_SOURCES, type AiNoteSource } from "@/lib/lead-fields";
 import { isPaymentCleared, paymentOutcomeStatuses, type PaymentOutcome } from "@/lib/payment";
 import { assertSlotOpen } from "@/lib/calendar";
 import { appUrl } from "@/lib/env";
@@ -37,7 +43,13 @@ import { appUrl } from "@/lib/env";
 export async function getFunnelFlags(
   organizationId: string,
   clientId: string,
-): Promise<{ stage: PipelineStageName; flags: FunnelFlags; contractId?: string; invoiceId?: string }> {
+): Promise<{
+  stage: PipelineStageName;
+  enteredAt: Date;
+  flags: FunnelFlags;
+  contractId?: string;
+  invoiceId?: string;
+}> {
   const db = getDb();
   const [pipeline] = await db
     .select()
@@ -49,6 +61,12 @@ export async function getFunnelFlags(
   if (!pipeline) {
     throw new Error("Pipeline missing for client");
   }
+
+  const [client] = await db
+    .select({ consultDate: clients.consultDate })
+    .from(clients)
+    .where(and(eq(clients.organizationId, organizationId), eq(clients.id, clientId)))
+    .limit(1);
 
   const [contract] = await db
     .select()
@@ -78,9 +96,13 @@ export async function getFunnelFlags(
     : undefined;
 
   return {
-    stage: pipeline.stage as PipelineStageName,
+    // Rows written before TOK-49 still say `intro`/`fit`/`contract_complete`; they are
+    // read as their canonical stage here so every rule downstream sees one vocabulary.
+    stage: migrateStage(pipeline.stage, { fitConfirmed: Boolean(pipeline.fitConfirmedAt) }),
+    enteredAt: pipeline.enteredAt,
     flags: {
       fitConfirmed: Boolean(pipeline.fitConfirmedAt),
+      consultDateSet: Boolean(client?.consultDate),
       paymentCleared: isPaymentCleared({
         paymentStatus: payment?.status,
         invoiceStatus: invoice?.status,
@@ -144,9 +166,16 @@ export async function sendIntro(input: {
   profileUrl: string;
 }) {
   const current = await getFunnelFlags(input.organizationId, input.clientId);
-  const move = canTransition(current.stage, "intro", current.flags);
+  const move = canTransition(current.stage, "outreach_sent", current.flags);
   if (!move.ok) throw new Error(move.reason);
-  await writeStage(input.organizationId, input.clientId, current.stage, "intro", input.actorUserId, "intro_sent");
+  await writeStage(
+    input.organizationId,
+    input.clientId,
+    current.stage,
+    "outreach_sent",
+    input.actorUserId,
+    "outreach_sent",
+  );
   const db = getDb();
   const [client] = await db.select().from(clients).where(eq(clients.id, input.clientId)).limit(1);
   if (client) {
@@ -179,17 +208,6 @@ export async function sendIntro(input: {
   });
 }
 
-export async function startFit(input: {
-  organizationId: string;
-  clientId: string;
-  actorUserId: string;
-}) {
-  const current = await getFunnelFlags(input.organizationId, input.clientId);
-  const move = canTransition(current.stage, "fit", current.flags);
-  if (!move.ok) throw new Error(move.reason);
-  await writeStage(input.organizationId, input.clientId, current.stage, "fit", input.actorUserId, "fit_started");
-}
-
 export async function confirmFit(input: {
   organizationId: string;
   clientId: string;
@@ -197,8 +215,8 @@ export async function confirmFit(input: {
 }) {
   const db = getDb();
   const current = await getFunnelFlags(input.organizationId, input.clientId);
-  if (["new_lead", "intro"].includes(current.stage)) {
-    throw new Error("Confirm fit only after the fit stage.");
+  if (!canSendContract(current.stage)) {
+    throw new Error("Confirm fit only once a consult is on the record.");
   }
   await db
     .update(pipelineStages)
@@ -220,6 +238,17 @@ export async function confirmFit(input: {
     entityType: "client",
     entityId: input.clientId,
   });
+  // Confirming the fit *is* the stage now, so the flag and the chip cannot disagree.
+  if (!canEnterAgreementSigned(current.stage)) {
+    await writeStage(
+      input.organizationId,
+      input.clientId,
+      current.stage,
+      "fit_confirmed",
+      input.actorUserId,
+      "fit_confirmed",
+    );
+  }
   return maybeAdvance(input.organizationId, input.clientId, input.actorUserId, "fit_confirmed");
 }
 
@@ -231,8 +260,8 @@ export async function sendContract(input: {
   amountCents?: number;
 }) {
   const current = await getFunnelFlags(input.organizationId, input.clientId);
-  if (["new_lead", "intro"].includes(current.stage)) {
-    throw new Error("Send a contract only after fit.");
+  if (!canSendContract(current.stage)) {
+    throw new Error("Send a contract only once a consult is on the record.");
   }
 
   const db = getDb();
@@ -387,8 +416,8 @@ export async function markAgreementSigned(input: {
   if (!contract) throw new Error("Contract not found");
 
   const current = await getFunnelFlags(input.organizationId, contract.clientId);
-  if (!["fit", "agreement_signed", "contract_complete", "active_care"].includes(current.stage)) {
-    throw new Error("Cannot sign before fit.");
+  if (!canEnterAgreementSigned(current.stage)) {
+    throw new Error("Cannot sign before fit is confirmed.");
   }
 
   await db
@@ -605,19 +634,28 @@ export async function bookConsult(input: {
     locationLabel: "Video or home visit — confirm in messages",
   });
 
+  // The consult date is a lead field now (TOK-49), and `consult_scheduled` is gated on
+  // it, so the booking writes the date before it asks for the stage.
+  const consultDate = input.startsAt.toISOString().slice(0, 10);
+  await db
+    .update(clients)
+    .set({ consultDate, updatedAt: new Date() })
+    .where(and(eq(clients.organizationId, input.organizationId), eq(clients.id, input.clientId)));
+
   const current = await getFunnelFlags(input.organizationId, input.clientId);
-  if (current.stage === "intro") {
-    const move = canTransition("intro", "fit", current.flags);
-    if (move.ok) {
-      await writeStage(
-        input.organizationId,
-        input.clientId,
-        "intro",
-        "fit",
-        input.actorUserId ?? null,
-        "consult_booked",
-      );
-    }
+  const move = canTransition(current.stage, "consult_scheduled", {
+    ...current.flags,
+    consultDateSet: true,
+  });
+  if (move.ok && !move.requiresConfirm) {
+    await writeStage(
+      input.organizationId,
+      input.clientId,
+      current.stage,
+      "consult_scheduled",
+      input.actorUserId ?? null,
+      "consult_booked",
+    );
   }
   return eventId;
 }
@@ -650,8 +688,10 @@ export async function createLeadFromBooking(input: {
     displayName: input.name,
     email,
     phone: input.phone,
-    source: "web",
+    source: "website",
     edd: input.edd,
+    // A booking is contact: the board should not show this lead as never touched.
+    lastContactAt: new Date(),
   });
   await db.insert(pipelineStages).values({
     id: newId(),
@@ -686,8 +726,15 @@ export async function createLeadFromBooking(input: {
     inviteSentAt: new Date(),
   });
 
-  await writeStage(input.organizationId, clientId, "new_lead", "intro", null, "book_consult_intro");
-  await writeStage(input.organizationId, clientId, "intro", "fit", null, "book_consult_fit");
+  await writeStage(
+    input.organizationId,
+    clientId,
+    "new_lead",
+    "outreach_sent",
+    null,
+    "book_consult_outreach",
+  );
+  // `bookConsult` writes the consult date and then moves the stage to consult_scheduled.
   await bookConsult({
     organizationId: input.organizationId,
     assigneeUserId: input.assigneeUserId,
@@ -741,4 +788,202 @@ export async function cancelCalendarEvent(input: {
     entityType: "calendar_event",
     entityId: event.id,
   });
+}
+
+/* ------------------------------------------------------------ TOK-49 CRM writes ---- */
+
+/**
+ * Move a record to any stage the rules allow (TOK-49).
+ *
+ * This is the dropdown's write path and it replaces the one-way advance buttons. A
+ * backward move is legal here — `canTransition` says so — but it only goes through when
+ * the caller has confirmed it, so a mis-click on a `<select>` cannot silently un-complete
+ * a signed, paid family.
+ *
+ * The rules live in `@/lib/pipeline` and are re-checked here rather than trusted from the
+ * page: a server action is reachable by direct POST.
+ */
+export async function setPipelineStage(input: {
+  organizationId: string;
+  clientId: string;
+  actorUserId: string;
+  to: string;
+  /** The UI's "yes, move it back" acknowledgement. */
+  confirmed?: boolean;
+}): Promise<{ ok: true; stage: PipelineStageName } | { ok: false; reason: string }> {
+  if (!isStage(input.to)) return { ok: false, reason: "Unknown stage." };
+  const to = input.to;
+
+  const current = await getFunnelFlags(input.organizationId, input.clientId);
+  const move = canTransition(current.stage, to, current.flags);
+  if (!move.ok) return { ok: false, reason: move.reason };
+  if (move.requiresConfirm && !input.confirmed) {
+    return {
+      ok: false,
+      reason: `Moving back to ${to} needs a confirmation.`,
+    };
+  }
+
+  const db = getDb();
+
+  // Entering fit_confirmed by hand is still confirming the fit, and stepping back below
+  // it withdraws that claim — otherwise the complete rule would keep passing on a match
+  // the board says is no longer made.
+  if (to === "fit_confirmed" && !current.flags.fitConfirmed) {
+    await db
+      .update(pipelineStages)
+      .set({
+        fitConfirmedAt: new Date(),
+        fitConfirmedByUserId: input.actorUserId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(pipelineStages.organizationId, input.organizationId),
+          eq(pipelineStages.clientId, input.clientId),
+        ),
+      );
+  } else if (move.requiresConfirm && !canEnterAgreementSigned(to) && current.flags.fitConfirmed) {
+    await db
+      .update(pipelineStages)
+      .set({ fitConfirmedAt: null, fitConfirmedByUserId: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(pipelineStages.organizationId, input.organizationId),
+          eq(pipelineStages.clientId, input.clientId),
+        ),
+      );
+  }
+
+  await writeStage(
+    input.organizationId,
+    input.clientId,
+    current.stage,
+    to,
+    input.actorUserId,
+    move.requiresConfirm ? "stage_set_backward" : "stage_set",
+  );
+
+  await writeAudit({
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    action: move.requiresConfirm ? "pipeline.stage_reverted" : "pipeline.stage_set",
+    entityType: "client",
+    entityId: input.clientId,
+    metadata: { from: current.stage, to },
+  });
+
+  return { ok: true, stage: to };
+}
+
+/**
+ * Append one dated line to a lead's notes feed. Append-only: a correction is another
+ * note, so the record still shows what was believed and when.
+ */
+export async function appendClientNote(input: {
+  organizationId: string;
+  clientId: string;
+  body: string;
+  source?: AiNoteSource;
+  actorUserId?: string | null;
+  at?: Date;
+}) {
+  const body = input.body.trim();
+  if (!body) return null;
+  const source = AI_NOTE_SOURCES.includes(input.source ?? "staff")
+    ? (input.source ?? "staff")
+    : "staff";
+  const db = getDb();
+  const id = newId();
+  await db.insert(clientAiNotes).values({
+    id,
+    organizationId: input.organizationId,
+    clientId: input.clientId,
+    body,
+    source,
+    actorUserId: input.actorUserId ?? null,
+    at: input.at ?? new Date(),
+  });
+  return id;
+}
+
+/**
+ * Two-tap contact log (TOK-49). Last Contact is the field a doula will actually keep
+ * current only if keeping it current is one tap, so the note is optional and the stamp
+ * is the point. Portal messages call this too, which is why `at` is a parameter.
+ */
+export async function logClientContact(input: {
+  organizationId: string;
+  clientId: string;
+  actorUserId?: string | null;
+  note?: string;
+  source?: AiNoteSource;
+  at?: Date;
+}) {
+  const at = input.at ?? new Date();
+  const db = getDb();
+  await db
+    .update(clients)
+    .set({ lastContactAt: at, updatedAt: new Date() })
+    .where(and(eq(clients.organizationId, input.organizationId), eq(clients.id, input.clientId)));
+  if (input.note?.trim()) {
+    await appendClientNote({
+      organizationId: input.organizationId,
+      clientId: input.clientId,
+      body: input.note,
+      source: input.source ?? "staff",
+      actorUserId: input.actorUserId ?? null,
+      at,
+    });
+  }
+}
+
+/**
+ * One-shot remap of pre-TOK-49 stage values (`intro`, `fit`, `contract_complete`).
+ *
+ * `db:push` cannot do this — the column is text and the values are data, not schema — so
+ * the seed and any deploy against an existing database call it. Idempotent: a row already
+ * on a canonical stage is left alone, so running it twice is a no-op rather than a
+ * rewrite of history.
+ */
+export async function remapLegacyStages(): Promise<{ stages: number; events: number }> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: pipelineStages.id,
+      stage: pipelineStages.stage,
+      fitConfirmedAt: pipelineStages.fitConfirmedAt,
+    })
+    .from(pipelineStages);
+
+  let stages = 0;
+  for (const row of rows) {
+    if (isStage(row.stage)) continue;
+    const to = migrateStage(row.stage, { fitConfirmed: Boolean(row.fitConfirmedAt) });
+    await db
+      .update(pipelineStages)
+      .set({ stage: to, updatedAt: new Date() })
+      .where(eq(pipelineStages.id, row.id));
+    stages += 1;
+  }
+
+  // The history is what the stepper reads, so legacy hop rows are remapped too. `fit`
+  // becomes consult_scheduled here regardless of the flag: the event records the moment
+  // the consult was booked, and the confirmation is its own later row.
+  const events = await db
+    .select({ id: pipelineEvents.id, fromStage: pipelineEvents.fromStage, toStage: pipelineEvents.toStage })
+    .from(pipelineEvents);
+  let eventCount = 0;
+  for (const row of events) {
+    const from = row.fromStage === null ? null : migrateStage(row.fromStage);
+    const to = migrateStage(row.toStage);
+    if (from === row.fromStage && to === row.toStage) continue;
+    await db
+      .update(pipelineEvents)
+      .set({ fromStage: from, toStage: to })
+      .where(eq(pipelineEvents.id, row.id));
+    eventCount += 1;
+  }
+
+  return { stages, events: eventCount };
 }

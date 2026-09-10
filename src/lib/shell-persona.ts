@@ -13,6 +13,7 @@
  * Everything here is pure so the split is testable without a session or a database.
  */
 import { canManageTeam } from "@/lib/team";
+import { STAGE_LABELS } from "@/lib/pipeline";
 import type { ShellNavGroup } from "@/components/brand/shell-nav";
 
 export type ShellPersona = "agency" | "doula";
@@ -170,6 +171,8 @@ export function shellNewItems(persona: ShellPersona): ShellNewItem[] {
   }
   return [
     { label: "Open pipeline", href: "/doula/clients" },
+    { label: "Needs attention", href: "/doula/clients?tab=attention" },
+    { label: "Import leads · CSV", href: "/doula/clients/import" },
     { label: "Form · template or assign", href: "/doula/forms" },
     { label: "Resource · write or share", href: "/doula/resources" },
     { label: "Public profile · Book Consult", href: "/doula/profile" },
@@ -188,7 +191,7 @@ export function clientsHeading(persona: ShellPersona): string {
  */
 export function clientsLegend(persona: ShellPersona): string {
   return persona === "agency"
-    ? "new lead → intro → fit → agreement signed (intent) → complete (fit + payment) → active care"
+    ? `${STAGE_LABELS.new_lead} → ${STAGE_LABELS.outreach_sent} → ${STAGE_LABELS.consult_scheduled} → ${STAGE_LABELS.consult_done} → ${STAGE_LABELS.fit_confirmed} → ${STAGE_LABELS.agreement_signed} (intent) → ${STAGE_LABELS.complete} (fit + payment) → ${STAGE_LABELS.active_care}`
     : "Everyone you are assigned to, with where their care stands.";
 }
 

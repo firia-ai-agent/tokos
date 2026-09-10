@@ -16,7 +16,7 @@ import {
 } from "@/db/schema";
 import { SlotUnavailableError, type SlotRejection } from "@/lib/calendar";
 import { readAnswers } from "@/lib/forms";
-import { beginCheckout, bookConsult, markAgreementSigned } from "@/lib/funnel";
+import { beginCheckout, bookConsult, logClientContact, markAgreementSigned } from "@/lib/funnel";
 import { newId } from "@/lib/ids";
 import { isPaymentCleared } from "@/lib/payment";
 import { clientAgreementStatuses } from "@/lib/queries";
@@ -78,6 +78,12 @@ export async function sendPortalMessageAction(formData: FormData) {
     fromUserId: session.userId,
     direction: "inbound",
     body,
+  });
+  // A message is contact, so the board's Last Contact moves with the thread (TOK-49)
+  // rather than waiting for someone to remember to log it.
+  await logClientContact({
+    organizationId: session.organizationId,
+    clientId: session.clientId,
   });
   // The reply has to land on both sides of the thread: the family's own view, the Home
   // checklist that counts it, and the doula inbox / client record that answers it.

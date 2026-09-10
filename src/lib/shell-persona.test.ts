@@ -94,7 +94,9 @@ describe("clients board copy (TOK-34 D2, D3)", () => {
   });
 
   it("keeps the stage funnel out of the doula legend", () => {
-    expect(clientsLegend("agency")).toContain("new lead");
+    // The agency legend is built from STAGE_LABELS now (TOK-49), so it reads in the same
+    // capitalisation as the chips it explains.
+    expect(clientsLegend("agency").toLowerCase()).toContain("new lead");
     expect(clientsLegend("doula").toLowerCase()).not.toContain("lead");
   });
 
@@ -154,7 +156,12 @@ describe("top bar (TOK-34 D4, D6)", () => {
         expect(navHrefs.has(target.href) || target.href.startsWith("/doula/settings")).toBe(true);
       }
       for (const item of shellNewItems(persona)) {
-        expect(navHrefs.has(item.href)).toBe(true);
+        // A rail destination, or a screen reached from one — `/doula/clients/import` and
+        // the Needs Attention tab both live under Clients (TOK-49).
+        const reachable = [...navHrefs].some(
+          (href) => item.href === href || item.href.startsWith(`${href}/`) || item.href.startsWith(`${href}?`),
+        );
+        expect(reachable).toBe(true);
       }
     }
   });

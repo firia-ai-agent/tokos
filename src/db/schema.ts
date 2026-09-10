@@ -95,10 +95,61 @@ export const clients = pgTable("clients", {
   alternateContactName: text("alternate_contact_name"),
   alternateContactPhone: text("alternate_contact_phone"),
   internalNotes: text("internal_notes"),
+  /**
+   * The lead record NOVA runs the practice off (TOK-49). These live on `clients` rather
+   * than a parallel lead table because a lead and a family are the same person a few
+   * weeks apart — splitting them would mean copying rows at `complete` and losing the
+   * intake number, the source, and the follow-up history exactly when they matter.
+   *
+   * Every picker column stores a value from `src/lib/lead-fields.ts`; nothing here is a
+   * free string the UI invents. Deliberately excluded: card numbers, member ids, and any
+   * health detail — insurance is a yes/no/unknown and a carrier name, nothing more,
+   * until there is a BAA.
+   */
+  serviceType: text("service_type"),
+  hospital: text("hospital"),
+  assignedProvider: text("assigned_provider"),
+  insurance: text("insurance").notNull().default("unknown"),
+  insuranceProvider: text("insurance_provider"),
+  consultDate: date("consult_date"),
+  lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
+  followUpDueOn: date("follow_up_due_on"),
+  /** External reference (PSAF/BDQ) so NOVA's own numbering survives migration. */
+  intakeRef: text("intake_ref"),
+  /** Staff who owns the lead. Distinct from the matched primary doula. */
+  ownerUserId: uuid("owner_user_id").references(() => users.id),
+  reviewed: boolean("reviewed").notNull().default(false),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   ...timestamps,
 }, (table) => [
   index("clients_org_idx").on(table.organizationId),
   index("clients_org_email_idx").on(table.organizationId, table.email),
+  index("clients_org_follow_up_idx").on(table.organizationId, table.followUpDueOn),
+  index("clients_org_owner_idx").on(table.organizationId, table.ownerUserId),
+  // Dedupe on re-import keys off this pair, so it is a uniqueness rule and not a hope.
+  uniqueIndex("clients_org_intake_ref_idx").on(table.organizationId, table.intakeRef),
+]);
+
+/**
+ * The running, dated notes feed on a lead (TOK-49) — the one Airtable behaviour NOVA
+ * names as her favourite. Append-only by design: a note is what was true when it was
+ * written, so a correction is another note rather than an edit.
+ *
+ * `source` says where the line came from (`staff`, `import`, `system`), which is what
+ * makes it safe for a daily AI summary to append here later without a reader ever
+ * mistaking a machine's guess for a person's note.
+ */
+export const clientAiNotes = pgTable("client_ai_notes", {
+  id: uuid("id").primaryKey(),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  clientId: uuid("client_id").notNull().references(() => clients.id),
+  body: text("body").notNull(),
+  source: text("source").notNull().default("staff"),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("client_ai_notes_client_idx").on(table.clientId, table.at),
+  index("client_ai_notes_org_idx").on(table.organizationId, table.at),
 ]);
 
 export const pipelineStages = pgTable("pipeline_stages", {

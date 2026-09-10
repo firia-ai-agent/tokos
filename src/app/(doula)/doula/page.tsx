@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { requireStaff } from "@/lib/tenancy";
-import { revenueHome } from "@/lib/queries";
+import { needsAttentionQueue, revenueHome } from "@/lib/queries";
 import { stageLabel } from "@/lib/pipeline";
+import { reasonSummary } from "@/lib/needs-attention";
 import { homeClientsEmpty, homeCtaLabel, shellPersona } from "@/lib/shell-persona";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -16,10 +17,19 @@ function greetingFor(now = new Date()) {
 
 export default async function DoulaHomePage() {
   const staff = await requireStaff();
-  const home = await revenueHome(staff.organizationId, staff.userId);
   // TOK-34 D5: "lead" is agency vocabulary. To the doula who will be at the birth, the
   // person who books a consult is a family from the first minute.
   const persona = shellPersona(staff.membershipRole);
+  const [home, attention] = await Promise.all([
+    revenueHome(staff.organizationId, staff.userId),
+    // Same rules the board and the leads tab use (TOK-49); an agency sees the practice,
+    // a doula sees her own families.
+    needsAttentionQueue(
+      staff.organizationId,
+      persona === "agency" ? {} : { doulaUserId: staff.userId },
+    ),
+  ]);
+  const attentionHref = "/doula/clients?tab=attention";
   const firstName = (staff.name ?? "there").split(/\s+/)[0];
   const todayLabel = format(new Date(), "EEEE, MMMM d");
   const maxBar = Math.max(...home.monthBars.map((bar) => bar.cents), 1);
@@ -34,17 +44,27 @@ export default async function DoulaHomePage() {
           </h1>
           <p className="mt-1.5 text-[14.5px] leading-relaxed text-muted-foreground">
             {todayLabel}
-            {home.reviewCount > 0
-              ? ` · ${home.reviewCount} item${home.reviewCount === 1 ? "" : "s"} need your review`
-              : " · practice is clear"}
+            {attention.length === 0 ? " · practice is clear" : null}
           </p>
         </div>
-        <Link
-          href="/doula/clients"
-          className="rounded-lg bg-coral px-3.5 py-2 text-[13px] font-semibold text-accent-foreground shadow-sm transition hover:bg-coral/90"
-        >
-          {homeCtaLabel(persona)}
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Was unlinked prose reading "N items need your review". A count nobody can
+              click is a count nobody acts on (TOK-49). */}
+          {attention.length > 0 ? (
+            <Link
+              href={attentionHref}
+              className="rounded-lg bg-teal-ink px-3.5 py-2 text-[13px] font-semibold text-cloud shadow-sm transition hover:bg-teal-ink/90"
+            >
+              Needs attention · {attention.length}
+            </Link>
+          ) : null}
+          <Link
+            href="/doula/clients"
+            className="rounded-lg bg-coral px-3.5 py-2 text-[13px] font-semibold text-accent-foreground shadow-sm transition hover:bg-coral/90"
+          >
+            {homeCtaLabel(persona)}
+          </Link>
+        </div>
       </header>
 
       {/* KPI strip — nova density, Cloud cards, Coral/Teal Ink emphasis */}
@@ -130,31 +150,42 @@ export default async function DoulaHomePage() {
           ) : null}
         </article>
 
-        {/* Needs review — operational, not AI/claims */}
+        {/* Needs attention — rule-generated, one row per family, name once and a short
+            list of reasons. Clicking a row opens that family. */}
         <article className="rounded-xl bg-card ring-1 ring-teal/15">
-          <div className="border-b border-teal/10 bg-teal-ink px-5 py-3.5">
-            <h2 className="font-heading text-lg text-cloud">Needs your review</h2>
-            <p className="mt-0.5 text-[12px] text-cloud/65">
-              Real pipeline items. Nothing drafts or sends itself.
-            </p>
+          <div className="flex items-center justify-between gap-3 border-b border-teal/10 bg-teal-ink px-5 py-3.5">
+            <div>
+              <h2 className="font-heading text-lg text-cloud">Needs attention</h2>
+              <p className="mt-0.5 text-[12px] text-cloud/65">
+                Overdue follow-ups, missing consult notes, unmatched, unreviewed.
+              </p>
+            </div>
+            <Link
+              href={attentionHref}
+              className="shrink-0 rounded-md bg-cloud/15 px-2.5 py-1 text-[12px] font-semibold text-cloud hover:bg-cloud/25"
+            >
+              Open pipeline
+            </Link>
           </div>
           <ul className="divide-y divide-teal/10">
-            {home.attention.length === 0 ? (
+            {attention.length === 0 ? (
               <li className="px-5 py-8 text-sm text-muted-foreground">
-                Nothing queued — clients, agreements, and invoices are clear.
+                Nothing queued — every open record has a follow-up, a doula, and a review.
               </li>
             ) : (
-              home.attention.map((item) => (
-                <li key={item.id} className="flex items-start justify-between gap-3 px-5 py-3.5">
-                  <div className="min-w-0">
-                    <p className="text-[13.5px] font-semibold text-teal-ink">{item.title}</p>
-                    <p className="mt-0.5 text-[12.5px] text-muted-foreground">{item.detail}</p>
-                  </div>
+              attention.slice(0, 6).map((item) => (
+                <li key={item.clientId}>
                   <Link
                     href={item.href}
-                    className="shrink-0 rounded-md bg-coral/15 px-2.5 py-1 text-[12px] font-semibold text-coral hover:bg-coral/25"
+                    className="flex items-start justify-between gap-3 px-5 py-3.5 transition hover:bg-cloud"
                   >
-                    {item.cta}
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-semibold text-teal-ink">{item.name}</p>
+                      <p className="mt-0.5 text-[12.5px] text-coral">{reasonSummary(item)}</p>
+                    </div>
+                    <span className="shrink-0 rounded-md bg-teal/10 px-2.5 py-1 text-[11.5px] font-semibold text-teal-ink">
+                      {item.stageLabel}
+                    </span>
                   </Link>
                 </li>
               ))

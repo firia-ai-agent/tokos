@@ -1,9 +1,11 @@
 import { and, asc, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { addDays, differenceInCalendarWeeks, format, startOfMonth, subMonths } from "date-fns";
 import { getDb } from "@/db";
 import {
   assignments,
   calendarEvents,
+  clientAiNotes,
   clients,
   contracts,
   emailTemplateVersions,
@@ -16,6 +18,7 @@ import {
   invoices,
   memberships,
   organizations,
+  pipelineEvents,
   pipelineStages,
   portalMessages,
   resourceShares,
@@ -23,8 +26,18 @@ import {
   users,
 } from "@/db/schema";
 import { clientChrome } from "@/lib/client-brand";
+
 import { formatCents } from "@/lib/money";
-import { stageLabel } from "@/lib/pipeline";
+import {
+  isOpenLeadStage,
+  migrateStage,
+  stageLabel,
+  type PipelineStageName,
+} from "@/lib/pipeline";
+import {
+  needsAttentionRows,
+  type NeedsAttentionInput,
+} from "@/lib/needs-attention";
 
 export type HomeKpi = {
   label: string;
@@ -57,6 +70,14 @@ export type HomeMonthBar = {
   cents: number;
   display: string;
 };
+
+/** Read a joined pipeline row as a canonical stage, legacy values and all (TOK-49). */
+function canonicalStage(row: {
+  stage: string | null;
+  fitConfirmedAt?: Date | null;
+}): PipelineStageName {
+  return migrateStage(row.stage, { fitConfirmed: Boolean(row.fitConfirmedAt) });
+}
 
 export async function revenueHome(organizationId: string, doulaUserId: string) {
   const db = getDb();
@@ -112,14 +133,10 @@ export async function revenueHome(organizationId: string, doulaUserId: string) {
     return edd >= today && edd <= windowEnd;
   });
 
-  const activeCare = myClients.filter((row) => row.stage === "active_care");
-  const leadOrFit = myClients.filter(
-    (row) =>
-      row.stage === "new_lead" ||
-      row.stage === "intro" ||
-      row.stage === "fit" ||
-      row.stage === "agreement_signed",
-  );
+  const activeCare = myClients.filter((row) => canonicalStage(row) === "active_care");
+  // Still in the funnel: captured, not yet complete. One helper rather than a list of
+  // stage strings that has to be found again every time the model grows (TOK-49).
+  const leadOrFit = myClients.filter((row) => isOpenLeadStage(canonicalStage(row)));
 
   const incompleteForms = clientIds.length
     ? await db
@@ -196,7 +213,7 @@ export async function revenueHome(organizationId: string, doulaUserId: string) {
   for (const row of leadOrFit.slice(0, 4)) {
     attention.push({
       id: `stage-${row.client.id}`,
-      title: `${row.client.displayName} · ${stageLabel(row.stage)}`,
+      title: `${row.client.displayName} · ${stageLabel(canonicalStage(row))}`,
       detail: row.client.edd
         ? `EDD ${format(new Date(`${row.client.edd}T12:00:00`), "MMM d")} · keep the funnel moving`
         : "Keep the funnel moving",
@@ -226,7 +243,7 @@ export async function revenueHome(organizationId: string, doulaUserId: string) {
         edd: row.client.edd!,
         eddLabel: format(eddDate, "MMM d"),
         weeksLabel,
-        stage: row.stage,
+        stage: canonicalStage(row),
         href: `/doula/clients/${row.client.id}`,
       };
     })
@@ -439,7 +456,7 @@ export async function listAgencyClients(organizationId: string) {
     .orderBy(asc(clients.displayName));
   // A client row without a pipeline row is a data accident, not a new stage — read it as
   // the first stage rather than rendering an empty badge.
-  return rows.map((row) => ({ ...row, stage: row.stage ?? "new_lead" }));
+  return rows.map((row) => ({ ...row, stage: canonicalStage(row) }));
 }
 
 /**
@@ -569,14 +586,10 @@ export async function shellAttention(organizationId: string, doulaUserId: string
     });
   }
 
-  for (const row of myClients
-    .filter((r) =>
-      ["new_lead", "intro", "fit", "agreement_signed"].includes(r.stage),
-    )
-    .slice(0, 3)) {
+  for (const row of myClients.filter((r) => isOpenLeadStage(migrateStage(r.stage))).slice(0, 3)) {
     items.push({
       id: `stage-${row.client.id}`,
-      title: `${row.client.displayName} · ${stageLabel(row.stage)}`,
+      title: `${row.client.displayName} · ${stageLabel(migrateStage(row.stage))}`,
       detail: "Keep intake moving",
       href: `/doula/clients/${row.client.id}`,
       cta: "Open",
@@ -700,4 +713,193 @@ export async function clientPortalChrome(organizationId: string) {
     .where(eq(organizations.id, organizationId))
     .limit(1);
   return clientChrome(org?.portalName, org?.name);
+}
+
+/* ------------------------------------------------------------- TOK-49 CRM board ---- */
+
+/**
+ * One row per family, with everything the dense pipeline list renders (TOK-49).
+ *
+ * The old list joined `assignments` and so could not show a family nobody was on; this
+ * reads the org and pulls the match in from the engagement, which is where "primary"
+ * actually lives. A doula's view narrows the same query by assignment rather than being a
+ * second query that could drift from it.
+ */
+export type LeadBoardRow = {
+  client: typeof clients.$inferSelect;
+  stage: PipelineStageName;
+  stageEnteredAt: Date | null;
+  fitConfirmedAt: Date | null;
+  primaryDoulaUserId: string | null;
+  primaryDoulaName: string | null;
+  ownerName: string | null;
+  lastNoteAt: Date | null;
+};
+
+export async function leadBoard(
+  organizationId: string,
+  opts: { doulaUserId?: string } = {},
+): Promise<LeadBoardRow[]> {
+  const db = getDb();
+  const primaryUser = alias(users, "primary_doula_user");
+  const ownerUser = alias(users, "owner_user");
+
+  // A doula sees the families she is assigned to, primary or backup, and nothing else.
+  let scopedIds: string[] | null = null;
+  if (opts.doulaUserId) {
+    const mine = await db
+      .select({ clientId: assignments.clientId })
+      .from(assignments)
+      .where(
+        and(
+          eq(assignments.organizationId, organizationId),
+          eq(assignments.userId, opts.doulaUserId),
+          eq(assignments.status, "active"),
+        ),
+      );
+    scopedIds = [...new Set(mine.map((row) => row.clientId))];
+    if (scopedIds.length === 0) return [];
+  }
+
+  const rows = await db
+    .select({
+      client: clients,
+      stage: pipelineStages.stage,
+      stageEnteredAt: pipelineStages.enteredAt,
+      fitConfirmedAt: pipelineStages.fitConfirmedAt,
+      primaryDoulaUserId: engagements.primaryDoulaUserId,
+      primaryDoulaName: primaryUser.name,
+      ownerName: ownerUser.name,
+    })
+    .from(clients)
+    .leftJoin(pipelineStages, eq(pipelineStages.clientId, clients.id))
+    .leftJoin(engagements, eq(engagements.clientId, clients.id))
+    .leftJoin(primaryUser, eq(primaryUser.id, engagements.primaryDoulaUserId))
+    .leftJoin(ownerUser, eq(ownerUser.id, clients.ownerUserId))
+    .where(
+      scopedIds
+        ? and(eq(clients.organizationId, organizationId), inArray(clients.id, scopedIds))
+        : eq(clients.organizationId, organizationId),
+    )
+    .orderBy(asc(clients.displayName));
+
+  // The newest note per family drives the "consult done, no note" rule. One grouped read
+  // rather than a query per row.
+  const clientIds = rows.map((row) => row.client.id);
+  const noteRows = clientIds.length
+    ? await db
+        .select({ clientId: clientAiNotes.clientId, at: sql<Date>`max(${clientAiNotes.at})` })
+        .from(clientAiNotes)
+        .where(
+          and(
+            eq(clientAiNotes.organizationId, organizationId),
+            inArray(clientAiNotes.clientId, clientIds),
+          ),
+        )
+        .groupBy(clientAiNotes.clientId)
+    : [];
+  const lastNoteOf = new Map(
+    noteRows.map((row) => [row.clientId, row.at ? new Date(row.at) : null]),
+  );
+
+  // A family can carry more than one engagement row; the board wants her once, with a
+  // primary if any engagement names one.
+  const byClient = new Map<string, LeadBoardRow>();
+  for (const row of rows) {
+    const existing = byClient.get(row.client.id);
+    if (existing && !row.primaryDoulaUserId) continue;
+    byClient.set(row.client.id, {
+      client: row.client,
+      // A missing pipeline row is a data accident, not a new stage; legacy values are
+      // read through the same migration map the funnel uses.
+      stage: migrateStage(row.stage, { fitConfirmed: Boolean(row.fitConfirmedAt) }),
+      stageEnteredAt: row.stageEnteredAt ?? null,
+      fitConfirmedAt: row.fitConfirmedAt ?? null,
+      primaryDoulaUserId: row.primaryDoulaUserId ?? null,
+      primaryDoulaName: row.primaryDoulaName ?? null,
+      ownerName: row.ownerName ?? null,
+      lastNoteAt: lastNoteOf.get(row.client.id) ?? null,
+    });
+  }
+
+  return [...byClient.values()];
+}
+
+/** A board row read as a Needs Attention input. One place, so the rules see one shape. */
+export function attentionInput(row: LeadBoardRow): NeedsAttentionInput {
+  return {
+    clientId: row.client.id,
+    name: row.client.displayName,
+    stage: row.stage,
+    followUpDueOn: row.client.followUpDueOn,
+    reviewed: row.client.reviewed,
+    hasPrimaryDoula: Boolean(row.primaryDoulaUserId),
+    stageEnteredAt: row.stageEnteredAt,
+    lastNoteAt: row.lastNoteAt,
+  };
+}
+
+/** The queue itself: one row per family, worst first, reasons attached. */
+export async function needsAttentionQueue(
+  organizationId: string,
+  opts: { doulaUserId?: string } = {},
+  today: Date = new Date(),
+) {
+  const rows = await leadBoard(organizationId, opts);
+  return needsAttentionRows(rows.map(attentionInput), today);
+}
+
+/**
+ * Every note on one family, newest first, with the author's name where there is one.
+ */
+export async function leadNotes(organizationId: string, clientId: string) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: clientAiNotes.id,
+      body: clientAiNotes.body,
+      source: clientAiNotes.source,
+      at: clientAiNotes.at,
+      actorUserId: clientAiNotes.actorUserId,
+    })
+    .from(clientAiNotes)
+    .where(
+      and(eq(clientAiNotes.organizationId, organizationId), eq(clientAiNotes.clientId, clientId)),
+    )
+    .orderBy(desc(clientAiNotes.at));
+
+  const actorIds = [...new Set(rows.map((row) => row.actorUserId).filter(Boolean))] as string[];
+  const authors = actorIds.length
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, actorIds))
+    : [];
+  const nameOf = new Map(authors.map((row) => [row.id, row.name]));
+
+  return rows.map((row) => ({
+    ...row,
+    actorName: row.actorUserId ? (nameOf.get(row.actorUserId) ?? null) : null,
+  }));
+}
+
+/**
+ * The dates behind the stage stepper: when this record first entered each stage.
+ *
+ * "First" rather than "last" on purpose — a record that was walked back and forward again
+ * should still read as having reached Consult done on the day the consult happened.
+ */
+export async function stageHistory(organizationId: string, clientId: string) {
+  const db = getDb();
+  const events = await db
+    .select({ toStage: pipelineEvents.toStage, at: pipelineEvents.at })
+    .from(pipelineEvents)
+    .where(
+      and(eq(pipelineEvents.organizationId, organizationId), eq(pipelineEvents.clientId, clientId)),
+    )
+    .orderBy(asc(pipelineEvents.at));
+
+  const entered = new Map<PipelineStageName, Date>();
+  for (const event of events) {
+    const stage = migrateStage(event.toStage);
+    if (!entered.has(stage)) entered.set(stage, event.at);
+  }
+  return entered;
 }

@@ -13,7 +13,8 @@
     "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
     "db:push": "dotenv -e .env.local -- drizzle-kit push",
     "db:seed": "dotenv -e .env.local -- tsx scripts/seed.ts",
-    "db:studio": "dotenv -e .env.local -- drizzle-kit studio"
+    "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
+    "db:remap-stages": "dotenv -e .env.local -- tsx scripts/remap-stages.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",

@@ -7,10 +7,10 @@ import { getDb } from "@/db";
 import { portalMessages, providerProfiles } from "@/db/schema";
 import {
   confirmFit,
+  logClientContact,
   sendContract,
   sendIntro,
   startActiveCare,
-  startFit,
 } from "@/lib/funnel";
 import { parseAvailabilityWindow } from "@/lib/calendar";
 import { newId } from "@/lib/ids";
@@ -33,16 +33,6 @@ export async function sendIntroAction(clientId: string) {
     clientId,
     actorUserId: staff.userId,
     profileUrl: `${appUrl()}/p/${profile?.slug ?? "maya-chen"}`,
-  });
-  revalidatePath("/doula");
-}
-
-export async function startFitAction(clientId: string) {
-  const staff = await requireStaff();
-  await startFit({
-    organizationId: staff.organizationId,
-    clientId,
-    actorUserId: staff.userId,
   });
   revalidatePath("/doula");
 }
@@ -91,6 +81,12 @@ export async function sendClientMessageAction(formData: FormData) {
     fromUserId: staff.userId,
     direction: "outbound",
     body,
+  });
+  // Writing to a family is contact: Last Contact moves with the thread (TOK-49).
+  await logClientContact({
+    organizationId: staff.organizationId,
+    clientId: client.id,
+    actorUserId: staff.userId,
   });
   // Both sides of the thread, plus the family's Home checklist, which counts this as
   // unread until they open `/portal/messages`.

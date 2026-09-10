@@ -7,7 +7,7 @@ import {
   markInvoicePaid,
   sendContract,
   sendIntro,
-  startFit,
+  setPipelineStage,
 } from "../src/lib/funnel";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -34,10 +34,22 @@ async function main() {
       profileUrl: "http://127.0.0.1:43127/p/maya-chen",
     });
   }
-  if ((await stage()) === "intro") {
-    await startFit({ organizationId: ORG, clientId: CLIENT, actorUserId: DOULA });
+  if ((await stage()) === "outreach_sent") {
+    // The consult date gates `consult_scheduled` (TOK-49), so the smoke run sets one the
+    // same way the lead form does before asking for the stage.
+    await db
+      .update(clients)
+      .set({ consultDate: new Date().toISOString().slice(0, 10) })
+      .where(eq(clients.id, CLIENT));
+    const moved = await setPipelineStage({
+      organizationId: ORG,
+      clientId: CLIENT,
+      actorUserId: DOULA,
+      to: "consult_scheduled",
+    });
+    if (!moved.ok) throw new Error(`could not schedule consult: ${moved.reason}`);
   }
-  if ((await stage()) === "fit") {
+  if ((await stage()) === "consult_scheduled" || (await stage()) === "consult_done") {
     await confirmFit({ organizationId: ORG, clientId: CLIENT, actorUserId: DOULA });
     const sent = await sendContract({
       organizationId: ORG,
@@ -61,8 +73,8 @@ async function main() {
   }
 
   const finalStage = await stage();
-  if (finalStage !== "contract_complete" && finalStage !== "active_care") {
-    throw new Error(`expected contract_complete, got ${finalStage}`);
+  if (finalStage !== "complete" && finalStage !== "active_care") {
+    throw new Error(`expected complete, got ${finalStage}`);
   }
   console.log(`smoke ok: ${client.displayName} is ${finalStage}`);
   await closeDb();

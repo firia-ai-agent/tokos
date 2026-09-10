@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { format } from "date-fns";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
@@ -16,12 +17,23 @@ import {
   resources,
 } from "@/db/schema";
 import { requireStaff } from "@/lib/tenancy";
-import { allowedDoulaActions } from "@/lib/pipeline";
+import { allowedDoulaActions, stageLabel } from "@/lib/pipeline";
 import { getFunnelFlags } from "@/lib/funnel";
-import { teamRoster } from "@/lib/queries";
-import { stageLabel } from "@/lib/pipeline";
+import { leadNotes, stageHistory, teamRoster } from "@/lib/queries";
 import { canManageTeam, roleLabel } from "@/lib/team";
+import { shellPersona } from "@/lib/shell-persona";
 import { assignPrimaryDoulaAction } from "@/app/actions/team";
+import {
+  appendLeadNoteAction,
+  logContactAction,
+  saveLeadFieldsAction,
+  setLeadOwnerAction,
+  setReviewedAction,
+  setStageAction,
+} from "@/app/actions/leads";
+import { StageSelect } from "@/components/brand/stage-select";
+import { StageStepper } from "@/components/brand/stage-stepper";
+import { LeadFieldsForm, LeadNotesFeed, LeadSummary } from "@/components/brand/lead-fields";
 import { unreadFor } from "@/lib/messages";
 import { formatCents } from "@/lib/money";
 import {
@@ -30,7 +42,6 @@ import {
   sendContractAction,
   sendIntroAction,
   startCareAction,
-  startFitAction,
   sendClientMessageAction,
   remindFormsAction,
 } from "@/app/actions/doula";
@@ -44,10 +55,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function ClientDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ stageError?: string }>;
 }) {
   const { id } = await params;
+  const { stageError } = await searchParams;
   const staff = await requireStaff();
   const db = getDb();
   const [client] = await db
@@ -59,6 +73,29 @@ export default async function ClientDetailPage({
 
   const funnel = await getFunnelFlags(staff.organizationId, client.id);
   const actions = allowedDoulaActions(funnel.stage, funnel.flags);
+  const persona = shellPersona(staff.membershipRole);
+  const [entered, notes] = await Promise.all([
+    stageHistory(staff.organizationId, client.id),
+    leadNotes(staff.organizationId, client.id),
+  ]);
+  // One object the summary strip, the edit form and the CSV importer all describe the
+  // same way — the field defs decide what is on it, not this page.
+  const leadValues = {
+    serviceType: client.serviceType,
+    phone: client.phone,
+    edd: client.edd,
+    city: client.city,
+    postalCode: client.postalCode,
+    hospital: client.hospital,
+    assignedProvider: client.assignedProvider,
+    insurance: client.insurance,
+    insuranceProvider: client.insuranceProvider,
+    source: client.source,
+    consultDate: client.consultDate,
+    followUpDueOn: client.followUpDueOn,
+    intakeRef: client.intakeRef,
+    lastContactAt: client.lastContactAt,
+  };
   // The engagement carries the match. Read org-scoped, like everything else on this page.
   const [engagement] = await db
     .select({ id: engagements.id, primaryDoulaUserId: engagements.primaryDoulaUserId })
@@ -213,45 +250,118 @@ export default async function ClientDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Match-to-contract</CardTitle>
+          <CardTitle>Stage</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
+          {stageError ? (
+            <p className="rounded-lg bg-coral/12 px-3 py-2 text-[12.5px] font-semibold text-coral">
+              {stageError}
+            </p>
+          ) : null}
+          {/* The dropdown is the control. `setStageAction` re-checks every rule, so this
+              is a convenience, not the guard. */}
+          <StageSelect clientId={client.id} current={funnel.stage} action={setStageAction} />
           <p className="text-sm text-muted-foreground">
             Fit confirmed: {funnel.flags.fitConfirmed ? "yes" : "no"} · Signed:{" "}
             {funnel.flags.agreementSigned ? "yes (intent)" : "no"} · Payment:{" "}
             {funnel.flags.paymentCleared ? "cleared" : "due"}
           </p>
+          {/* Secondary: the actions that do real work — send an email, cut a contract —
+              rather than only nudging the chip forward. */}
           <div className="flex flex-wrap gap-2">
             {actions.includes("send_intro") ? (
               <form action={sendIntroAction.bind(null, client.id)}>
-                <Button type="submit">Send intro</Button>
-              </form>
-            ) : null}
-            {actions.includes("start_fit") ? (
-              <form action={startFitAction.bind(null, client.id)}>
-                <Button type="submit" variant="outline">
-                  Start fit
+                <Button type="submit" size="sm" variant="outline">
+                  Send intro email
                 </Button>
               </form>
             ) : null}
             {actions.includes("confirm_fit") ? (
               <form action={confirmFitAction.bind(null, client.id)}>
-                <Button type="submit">Confirm fit</Button>
+                <Button type="submit" size="sm" variant="outline">
+                  Confirm fit
+                </Button>
               </form>
             ) : null}
             {actions.includes("send_contract") ? (
               <form action={sendContractAction.bind(null, client.id)}>
-                <Button type="submit" variant="secondary">
+                <Button type="submit" size="sm" variant="secondary">
                   Send contract
                 </Button>
               </form>
             ) : null}
             {actions.includes("start_care") ? (
               <form action={startCareAction.bind(null, client.id)}>
-                <Button type="submit">Start active care</Button>
+                <Button type="submit" size="sm" variant="outline">
+                  Start active care
+                </Button>
               </form>
             ) : null}
+            <form action={logContactAction} className="flex items-center gap-2">
+              <input type="hidden" name="clientId" value={client.id} />
+              <Button type="submit" size="sm" variant="ghost">
+                Log contact
+              </Button>
+            </form>
           </div>
+          <StageStepper current={funnel.stage} entered={entered} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle>Lead details</CardTitle>
+          {persona === "agency" ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <form action={setLeadOwnerAction} className="flex items-center gap-2">
+                <input type="hidden" name="clientId" value={client.id} />
+                <label className="sr-only" htmlFor="ownerUserId">
+                  Owner
+                </label>
+                <select
+                  id="ownerUserId"
+                  name="ownerUserId"
+                  defaultValue={client.ownerUserId ?? ""}
+                  className="h-8 rounded-md border border-teal/20 bg-card px-2 text-[12.5px] text-teal-ink focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/25"
+                >
+                  <option value="">No owner</option>
+                  {roster.map((member) => (
+                    <option key={member.userId} value={member.userId}>
+                      {member.name}
+                    </option>
+                  ))}
+                </select>
+                <Button type="submit" size="sm" variant="ghost">
+                  Set owner
+                </Button>
+              </form>
+              <form action={setReviewedAction}>
+                <input type="hidden" name="clientId" value={client.id} />
+                <input type="hidden" name="reviewed" value={client.reviewed ? "no" : "yes"} />
+                <Button type="submit" size="sm" variant={client.reviewed ? "ghost" : "outline"}>
+                  {client.reviewed ? "Reviewed ✓" : "Mark reviewed"}
+                </Button>
+              </form>
+            </div>
+          ) : null}
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <LeadSummary values={leadValues} persona={persona} />
+          <LeadFieldsForm
+            clientId={client.id}
+            persona={persona}
+            values={leadValues}
+            action={saveLeadFieldsAction}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Notes</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LeadNotesFeed clientId={client.id} notes={notes} action={appendLeadNoteAction} />
         </CardContent>
       </Card>
 
@@ -277,12 +387,16 @@ export default async function ClientDetailPage({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Stage history</CardTitle>
+            <CardTitle>Stage log</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
+            {/* The stepper above is the answer to "where are we"; this stays as the audit
+                trail behind it, in staff labels rather than raw codes. */}
+            {events.length === 0 ? <p className="text-muted-foreground">No moves yet.</p> : null}
             {events.map((event) => (
-              <p key={event.id}>
-                {event.fromStage ?? "—"} → {event.toStage} · {event.reason}
+              <p key={event.id} className="text-muted-foreground">
+                {format(event.at, "MMM d")} · {event.fromStage ? stageLabel(event.fromStage) : "—"}{" "}
+                → <span className="font-medium text-teal-ink">{stageLabel(event.toStage)}</span>
               </p>
             ))}
           </CardContent>
